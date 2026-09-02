@@ -54,10 +54,10 @@ cp .env.example .env.local
 Every value in `.env.example` is left blank by design. Populate the required values from your infrastructure providers:
 
 ```env
-# Supabase Configuration (Supabase Dashboard -> Project Settings -> API)
+# Supabase Configuration (Supabase Dashboard -> Project Settings -> API Keys)
 NEXT_PUBLIC_SUPABASE_URL=https://<your-project-id>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-public-key>
-SUPABASE_SERVICE_ROLE_KEY=<your-service-role-secret-key>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<your-publishable-key>
+SUPABASE_SECRET_KEY=<your-secret-key>
 
 # Database Connection (Supabase Dashboard -> Database -> Connection string URI)
 DATABASE_URL=postgresql://postgres:<password>@db.<your-project-id>.supabase.co:5432/postgres

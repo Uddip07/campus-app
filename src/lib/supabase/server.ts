@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getSupabaseConfig } from "../env";
 
 export function createServerSupabaseClient() {
-  const { url, anonKey, isConfigured } = getSupabaseConfig();
+  const { url, publishableKey, isConfigured } = getSupabaseConfig();
 
   if (!isConfigured) {
     return null;
@@ -11,7 +11,7 @@ export function createServerSupabaseClient() {
 
   const cookieStore = cookies();
 
-  return createServerClient(url, anonKey, {
+  return createServerClient(url, publishableKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

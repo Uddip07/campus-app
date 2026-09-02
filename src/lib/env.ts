@@ -2,15 +2,19 @@
 
 export function getSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const publishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const secretKey =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const isConfigured = Boolean(url && anonKey);
+  const isConfigured = Boolean(url && publishableKey);
 
   return {
     url: url || "",
-    anonKey: anonKey || "",
-    serviceKey: serviceKey || "",
+    publishableKey: publishableKey || "",
+    secretKey: secretKey || "",
     isConfigured,
   };
 }
@@ -22,7 +26,7 @@ export function isSupabaseConfigured(): boolean {
 export function assertSupabaseConfigured(): void {
   if (!isSupabaseConfigured()) {
     throw new Error(
-      "Supabase configuration is missing. NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be configured in .env."
+      "Supabase configuration is missing. NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be configured in .env."
     );
   }
 }

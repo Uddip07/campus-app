@@ -10,14 +10,14 @@ export async function broadcastNewMessage(
   roomId: string,
   message: MessageDTO
 ): Promise<void> {
-  const { url, serviceKey, isConfigured } = getSupabaseConfig();
-  if (!isConfigured || !serviceKey) {
+  const { url, secretKey, isConfigured } = getSupabaseConfig();
+  if (!isConfigured || !secretKey) {
     // In local dev without Supabase realtime configured, broadcast is skipped
     return;
   }
 
   try {
-    const supabase = createClient(url, serviceKey);
+    const supabase = createClient(url, secretKey);
     const channel = supabase.channel(`room:${roomId}`);
 
     await channel.send({

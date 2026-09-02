@@ -47,14 +47,14 @@ export async function uploadAnnouncementAttachment(
     );
   }
 
-  const { url, serviceKey } = getSupabaseConfig();
-  if (!serviceKey) {
+  const { url, secretKey } = getSupabaseConfig();
+  if (!secretKey) {
     throw new Error(
-      "Attachment upload unavailable: SUPABASE_SERVICE_ROLE_KEY is required for server uploads."
+      "Attachment upload unavailable: SUPABASE_SECRET_KEY is required for server uploads."
     );
   }
 
-  const supabase = createClient(url, serviceKey);
+  const supabase = createClient(url, secretKey);
   const fileExt = fileName.split(".").pop() || "bin";
   const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
   const storagePath = `attachments/${uniqueName}`;

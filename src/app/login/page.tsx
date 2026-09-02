@@ -18,7 +18,7 @@ export default function LoginPage() {
     if (!email) return;
 
     if (!supabase) {
-      setError("Supabase configuration is missing. NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be configured.");
+      setError("Supabase configuration is missing. NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be configured.");
       return;
     }
 
@@ -63,7 +63,7 @@ export default function LoginPage() {
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
             <div>
               <p className="font-semibold">Configuration Error</p>
-              <p>Supabase configuration is missing. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p>
+              <p>Supabase configuration is missing. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.</p>
             </div>
           </div>
         )}
