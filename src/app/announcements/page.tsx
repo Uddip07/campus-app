@@ -1,11 +1,16 @@
 import { redirect } from "next/navigation";
-import { getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
+import { getAuthenticatedAuthUser, getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
 import { AnnouncementFeed } from "@/components/announcements/AnnouncementFeed";
 
 export default async function AnnouncementsPage() {
+  const authUser = await getAuthenticatedAuthUser();
+  if (!authUser) {
+    redirect("/login");
+  }
+
   const user = await getSessionUser();
   if (!user) {
-    redirect("/login");
+    redirect("/verify");
   }
 
   return <AnnouncementFeed currentUser={sanitizeUserProfile(user)} />;

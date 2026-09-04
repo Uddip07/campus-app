@@ -2,6 +2,15 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseConfig } from "@/lib/env";
 
+const COOKIE_MAX_AGE = 400 * 24 * 60 * 60; // 400 days persistent
+
+function copyCookies(fromResponse: NextResponse, toResponse: NextResponse): NextResponse {
+  fromResponse.cookies.getAll().forEach((cookie) => {
+    toResponse.cookies.set(cookie.name, cookie.value, cookie);
+  });
+  return toResponse;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
@@ -34,6 +43,11 @@ export async function middleware(request: NextRequest) {
   }
 
   const supabase = createServerClient(url, publishableKey, {
+    cookieOptions: {
+      path: "/",
+      sameSite: "lax",
+      maxAge: COOKIE_MAX_AGE,
+    },
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -46,14 +60,57 @@ export async function middleware(request: NextRequest) {
           request,
         });
         cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
+          response.cookies.set(name, value, {
+            path: "/",
+            sameSite: "lax",
+            maxAge: options?.maxAge !== undefined ? options.maxAge : COOKIE_MAX_AGE,
+            ...options,
+          });
         });
       },
     },
   });
 
   // Refresh auth token if necessary
-  await supabase.auth.getUser();
+  let user = null;
+  try {
+    const authResult = await supabase.auth.getUser();
+    user = authResult?.data?.user ?? null;
+  } catch {
+    user = null;
+  }
+
+  // Do not redirect API routes or auth callback
+  if (pathname.startsWith("/api/") || pathname.startsWith("/auth/")) {
+    return response;
+  }
+
+  const isOnboarded =
+    user?.user_metadata?.onboarded === true ||
+    request.cookies.get("campus_onboarded")?.value === "true";
+
+  const isChatRoute = pathname === "/chat" || pathname.startsWith("/chat/");
+  const isProtectedRoute = isChatRoute || pathname.startsWith("/admin") || pathname.startsWith("/announcements");
+
+  if (!user) {
+    // No valid Supabase session
+    if (isProtectedRoute || pathname === "/") {
+      return copyCookies(response, NextResponse.redirect(new URL("/login", request.url)));
+    }
+  } else {
+    // Valid Supabase session exists
+    if (isOnboarded) {
+      // Valid session + onboarding complete visiting /login, /, /verify
+      if (pathname === "/login" || pathname === "/" || pathname === "/verify") {
+        return copyCookies(response, NextResponse.redirect(new URL("/chat", request.url)));
+      }
+    } else {
+      // Valid session + onboarding incomplete
+      if (pathname === "/login" || pathname === "/" || isChatRoute) {
+        return copyCookies(response, NextResponse.redirect(new URL("/verify", request.url)));
+      }
+    }
+  }
 
   return response;
 }

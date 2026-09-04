@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
+import { getAuthenticatedAuthUser, getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
 import { canAccessRoom } from "@/lib/auth/rbac";
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
@@ -7,9 +7,14 @@ import { ChatContainer } from "@/components/chat/ChatContainer";
 import { Building2, ShieldAlert } from "lucide-react";
 
 export default async function AlumniChatPage() {
+  const authUser = await getAuthenticatedAuthUser();
+  if (!authUser) {
+    redirect("/login");
+  }
+
   const user = await getSessionUser();
   if (!user) {
-    redirect("/login");
+    redirect("/verify");
   }
 
   const alumniRoom = await db.query.rooms.findFirst({

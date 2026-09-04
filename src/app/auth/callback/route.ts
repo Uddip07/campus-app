@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { getSupabaseConfig, isAllowedInstitutionalEmail } from "@/lib/env";
 import { sanitizeRedirectPath } from "@/lib/auth/redirect";
+import { db, schema } from "@/db";
+import { eq } from "drizzle-orm";
 
 import { type EmailOtpType } from "@supabase/supabase-js";
+
+const COOKIE_MAX_AGE = 400 * 24 * 60 * 60; // 400 days persistent
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
@@ -53,6 +57,11 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(redirectTarget);
 
   const supabase = createServerClient(url, publishableKey, {
+    cookieOptions: {
+      path: "/",
+      sameSite: "lax",
+      maxAge: COOKIE_MAX_AGE,
+    },
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -60,7 +69,12 @@ export async function GET(request: NextRequest) {
       setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
         cookiesToSet.forEach(({ name, value, options }) => {
           request.cookies.set(name, value);
-          response.cookies.set(name, value, options);
+          response.cookies.set(name, value, {
+            path: "/",
+            sameSite: "lax",
+            maxAge: options?.maxAge !== undefined ? options.maxAge : COOKIE_MAX_AGE,
+            ...options,
+          });
         });
       },
     },
@@ -104,6 +118,38 @@ export async function GET(request: NextRequest) {
     console.warn(`[AuthCallback] User email is not confirmed: ${userEmail}`);
     await supabase.auth.signOut();
     return NextResponse.redirect(new URL("/login?error=unconfirmed_email", request.url));
+  }
+
+  // Determine whether user has already completed onboarding
+  let isOnboarded = user.user_metadata?.onboarded === true;
+  if (!isOnboarded) {
+    try {
+      const userRecord = await db.query.users.findFirst({
+        where: eq(schema.users.id, user.id),
+        with: {
+          cohort: true,
+          anonymousIdentities: { limit: 1 },
+        },
+      });
+      if (userRecord && userRecord.cohort && userRecord.anonymousIdentities && userRecord.anonymousIdentities.length > 0) {
+        isOnboarded = true;
+      }
+    } catch {
+      // Database unconfigured or unavailable in mock
+    }
+  }
+
+  if (isOnboarded) {
+    response.cookies.set("campus_onboarded", "true", {
+      path: "/",
+      sameSite: "lax",
+      maxAge: COOKIE_MAX_AGE,
+    });
+    // If next target was default fallback (/verify), redirect directly to /chat
+    if (next === "/verify") {
+      const chatTarget = new URL("/chat", request.url);
+      response.headers.set("Location", chatTarget.toString());
+    }
   }
 
   return response;

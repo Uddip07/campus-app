@@ -7,5 +7,11 @@ export function createClient() {
     // Return null or client that signals unconfigured state
     return null;
   }
-  return createBrowserClient(url, publishableKey);
+  return createBrowserClient(url, publishableKey, {
+    cookieOptions: {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 400 * 24 * 60 * 60,
+    },
+  });
 }

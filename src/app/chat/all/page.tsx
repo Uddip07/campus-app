@@ -1,13 +1,18 @@
 import { redirect } from "next/navigation";
-import { getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
+import { getAuthenticatedAuthUser, getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { ChatContainer } from "@/components/chat/ChatContainer";
 
 export default async function AllCollegeChatPage() {
+  const authUser = await getAuthenticatedAuthUser();
+  if (!authUser) {
+    redirect("/login");
+  }
+
   const user = await getSessionUser();
   if (!user) {
-    redirect("/login");
+    redirect("/verify");
   }
 
   // Look up global room

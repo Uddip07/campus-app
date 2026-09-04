@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/auth/session";
+import { getAuthenticatedAuthUser, getSessionUser } from "@/lib/auth/session";
 import { canModerate } from "@/lib/auth/rbac";
 import { ShieldAlert } from "lucide-react";
 
@@ -8,9 +8,14 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const authUser = await getAuthenticatedAuthUser();
+  if (!authUser) {
+    redirect("/login");
+  }
+
   const user = await getSessionUser();
   if (!user) {
-    redirect("/login");
+    redirect("/verify");
   }
 
   if (!canModerate(user.role)) {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { UserSessionProfile } from "@/lib/types";
+import { createClient } from "@/lib/supabase/client";
 import {
   Bell,
   Globe,
@@ -25,6 +26,10 @@ export function Navbar({ user, authenticatedEmail }: NavbarProps) {
 
   const handleSignOut = async () => {
     try {
+      const supabase = createClient();
+      if (supabase) {
+        await supabase.auth.signOut().catch(() => {});
+      }
       await fetch("/api/auth/logout", { method: "POST" });
       router.push("/login");
       router.refresh();
@@ -41,10 +46,10 @@ export function Navbar({ user, authenticatedEmail }: NavbarProps) {
       active: pathname.startsWith("/announcements"),
     },
     {
-      href: "/chat/all",
+      href: "/chat",
       label: "All College",
       icon: Globe,
-      active: pathname === "/chat/all" || (pathname.startsWith("/chat/") && !pathname.includes("cohort") && !pathname.includes("alumni")),
+      active: pathname === "/chat" || pathname === "/chat/all" || (pathname.startsWith("/chat/") && !pathname.includes("cohort") && !pathname.includes("alumni")),
     },
     {
       href: "/chat/cohort",
@@ -70,7 +75,7 @@ export function Navbar({ user, authenticatedEmail }: NavbarProps) {
       <div className="container flex h-14 max-w-6xl items-center justify-between px-4 mx-auto">
         {/* Brand */}
         <div className="flex items-center gap-6">
-          <Link href="/chat/all" className="flex items-center gap-2 font-bold tracking-tight text-foreground">
+          <Link href="/chat" className="flex items-center gap-2 font-bold tracking-tight text-foreground">
             <span className="text-xl">Campus</span>
             <span className="rounded-full bg-accent/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground border border-border">
               NSUT

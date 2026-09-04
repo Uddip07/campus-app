@@ -211,7 +211,16 @@ export async function POST(req: NextRequest) {
       return { userRecord: savedUser, cohort: cohortRecord, activeIdentity: identity };
     });
 
-    return NextResponse.json({
+    // Mark user as onboarded in Supabase user metadata
+    await supabase.auth
+      .updateUser({
+        data: { onboarded: true },
+      })
+      .catch(() => {
+        // Silently continue if Supabase is offline/mocked
+      });
+
+    const response = NextResponse.json({
       success: true,
       verificationState: "Verified NSUT institutional email",
       isOfficiallyVerified: verified.isOfficiallyVerified,
@@ -224,6 +233,14 @@ export async function POST(req: NextRequest) {
         isMutedOrBanned: false,
       },
     });
+
+    response.cookies.set("campus_onboarded", "true", {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 400 * 24 * 60 * 60,
+    });
+
+    return response;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Verification error";
     return NextResponse.json({ error: message }, { status: 400 });
