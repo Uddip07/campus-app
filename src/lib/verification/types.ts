@@ -15,6 +15,8 @@ export interface VerifiedStudent {
   rollNumber: string;
   graduationYear: number;
   status: "active" | "graduated";
+  verificationMethod: "institutional_email" | "official_nsut_api";
+  isOfficiallyVerified: boolean;
 }
 
 export interface StudentVerificationProvider {

@@ -1,9 +1,10 @@
 import { isRedisConfigured } from "../env";
 
-interface RateLimitResult {
+export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   resetTime: number;
+  retryAfterSeconds: number;
 }
 
 // In-memory token bucket store for local development fallback
@@ -45,11 +46,13 @@ export async function checkRateLimit(
         if (res.ok) {
           const results = await res.json();
           const currentCount = results[0]?.result ?? 1;
-          const ttl = results[2]?.result ?? windowSeconds;
+          const ttl = Math.max(1, results[2]?.result ?? windowSeconds);
+          const resetTime = now + ttl * 1000;
           return {
             allowed: currentCount <= limit,
             remaining: Math.max(0, limit - currentCount),
-            resetTime: now + ttl * 1000,
+            resetTime,
+            retryAfterSeconds: ttl,
           };
         }
       }
@@ -68,20 +71,24 @@ export async function checkRateLimit(
 
   const existing = memoryStore.get(key);
   if (!existing || now > existing.resetAt) {
-    memoryStore.set(key, { count: 1, resetAt: now + windowMs });
+    const resetAt = now + windowMs;
+    memoryStore.set(key, { count: 1, resetAt });
     return {
       allowed: true,
       remaining: limit - 1,
-      resetTime: now + windowMs,
+      resetTime: resetAt,
+      retryAfterSeconds: windowSeconds,
     };
   }
 
   existing.count += 1;
   const allowed = existing.count <= limit;
+  const retryAfterSeconds = Math.ceil(Math.max(1, existing.resetAt - now) / 1000);
   return {
     allowed,
     remaining: Math.max(0, limit - existing.count),
     resetTime: existing.resetAt,
+    retryAfterSeconds,
   };
 }
 
@@ -94,7 +101,19 @@ export async function rateLimitReport(userId: string): Promise<RateLimitResult> 
 }
 
 export async function rateLimitAuth(identifier: string): Promise<RateLimitResult> {
-  return checkRateLimit(`rate:auth:${identifier}`, 5, 900); // 5 attempts per 15 min
+  // In development, allow more frequent verification attempts to facilitate testing
+  const isDev = process.env.NODE_ENV !== "production";
+  const limit = isDev ? 30 : 5;
+  const windowSeconds = isDev ? 60 : 900;
+  return checkRateLimit(`rate:auth:${identifier}`, limit, windowSeconds);
+}
+
+export async function rateLimitLogin(identifier: string): Promise<RateLimitResult> {
+  // Configured to protect Supabase SMTP while allowing reasonable testing in development
+  const isDev = process.env.NODE_ENV !== "production";
+  const limit = isDev ? 10 : 5;
+  const windowSeconds = isDev ? 60 : 300;
+  return checkRateLimit(`rate:login:${identifier}`, limit, windowSeconds);
 }
 
 export async function rateLimitAnnouncement(userId: string): Promise<RateLimitResult> {

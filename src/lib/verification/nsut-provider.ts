@@ -60,6 +60,8 @@ export class ConfiguredNsutProvider implements StudentVerificationProvider {
       rollNumber: parsed.rollNumber,
       graduationYear: parsed.graduationYear,
       status: isGraduated ? "graduated" : "active",
+      verificationMethod: "official_nsut_api",
+      isOfficiallyVerified: true,
     };
   }
 }

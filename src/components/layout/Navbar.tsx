@@ -16,9 +16,10 @@ import clsx from "clsx";
 
 interface NavbarProps {
   user: UserSessionProfile | null;
+  authenticatedEmail?: string | null;
 }
 
-export function Navbar({ user }: NavbarProps) {
+export function Navbar({ user, authenticatedEmail }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -128,6 +129,23 @@ export function Navbar({ user }: NavbarProps) {
                 </span>
                 <span className="text-muted-foreground text-[11px]">
                   '{String(user.cohort).slice(-2)}
+                </span>
+              </div>
+
+              <button
+                onClick={handleSignOut}
+                title="Sign out"
+                className="p-1.5 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          ) : authenticatedEmail ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-emerald-950/50 border border-emerald-800/50 rounded-full pl-2.5 pr-3 py-1 text-xs text-emerald-300">
+                <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="font-mono text-[11px] truncate max-w-[140px] sm:max-w-[200px]">
+                  {authenticatedEmail}
                 </span>
               </div>
 

@@ -33,7 +33,7 @@ export default async function HomePage() {
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] px-4 text-center max-w-3xl mx-auto py-12">
       <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/80 border border-border text-xs font-semibold text-muted-foreground mb-6">
         <ShieldCheck className="h-4 w-4 text-emerald-400" />
-        Verified NSUT Community
+        Verified NSUT Institutional Community
       </div>
 
       <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-foreground mb-4">
@@ -42,7 +42,7 @@ export default async function HomePage() {
       </h1>
 
       <p className="text-base text-muted-foreground max-w-xl mb-8 leading-relaxed">
-        Campus gives every verified NSUT student a pseudonymous identity. Talk with your entire college or your specific graduation batch without revealing your real name or roll number.
+        Campus gives every student with a verified @nsut.ac.in institutional email a pseudonymous identity. Talk with your entire college or your specific graduation batch without revealing your real name or roll number.
       </p>
 
       <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-xs mb-12">
@@ -57,7 +57,7 @@ export default async function HomePage() {
           href="/verify"
           className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-secondary text-foreground font-semibold text-sm border border-border hover:bg-secondary/80 transition-colors"
         >
-          Verify NSUT ID
+          Complete Setup
         </Link>
       </div>
 
@@ -79,9 +79,9 @@ export default async function HomePage() {
         </div>
         <div className="p-4 rounded-lg bg-card border border-border">
           <ShieldCheck className="h-5 w-5 text-emerald-400 mb-2" />
-          <h2 className="text-sm font-bold text-foreground mb-1">No Impersonation</h2>
+          <h2 className="text-sm font-bold text-foreground mb-1">Institutional Mailbox</h2>
           <p className="text-xs text-muted-foreground">
-            Every user is cryptographically verified against NSUT student records.
+            Verified NSUT institutional email (@nsut.ac.in) guarantees campus membership without compromising anonymity.
           </p>
         </div>
       </div>

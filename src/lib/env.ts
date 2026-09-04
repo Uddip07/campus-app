@@ -75,3 +75,18 @@ export function isRedisConfigured(): boolean {
         process.env.UPSTASH_REDIS_REST_TOKEN)
   );
 }
+
+export const INSTITUTIONAL_EMAIL_DOMAIN = "nsut.ac.in";
+
+export function isAllowedInstitutionalEmail(email: string): boolean {
+  if (!email || typeof email !== "string") {
+    return false;
+  }
+  const normalized = email.trim().toLowerCase();
+  const atIndex = normalized.lastIndexOf("@");
+  if (atIndex <= 0) {
+    return false;
+  }
+  const domain = normalized.slice(atIndex + 1);
+  return domain === INSTITUTIONAL_EMAIL_DOMAIN;
+}

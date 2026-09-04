@@ -18,8 +18,25 @@ export interface FullUserContext {
 }
 
 /**
+ * Resolves the authenticated Supabase auth user regardless of whether
+ * they have completed internal Campus profile onboarding.
+ */
+export async function getAuthenticatedAuthUser() {
+  const supabase = createServerSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+
+  return authUser;
+}
+
+/**
  * Resolves the authenticated Supabase user and their internal database record.
- * Returns null if not logged in.
+ * Returns null if not logged in or onboarding incomplete.
  */
 export async function getSessionUser(): Promise<FullUserContext | null> {
   const supabase = createServerSupabaseClient();

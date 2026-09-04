@@ -71,8 +71,13 @@ UPSTASH_REDIS_REST_TOKEN=
 # Error Tracking (Optional)
 SENTRY_DSN=
 
-# Official NSUT Verification Integration Boundary
-# When unconfigured, the application gracefully reports: "NSUT student verification is not configured."
+# NSUT Institutional Email Verification (Primary / Prototype Default)
+# Primary verification requires users to sign in and confirm an @nsut.ac.in email address.
+# No external verification API is required for this mechanism.
+
+# Optional: Official NSUT Verification Integration Boundary (Future / Production SSO)
+# If configured, the system will switch to the official external NSUT verification authority API.
+# Leave blank to use institutional email verification.
 NSUT_VERIFICATION_URL=
 NSUT_VERIFICATION_CLIENT_ID=
 NSUT_VERIFICATION_CLIENT_SECRET=
@@ -112,8 +117,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - **Missing Supabase Config**: Clear alert indicating Supabase configuration is missing.
 - **Missing Redis**: Application runs normally; logs development warning:
   `[RateLimit] Warning: Redis is unconfigured. Operating with in-memory development rate limiter.`
-- **Missing NSUT Provider**: Attempting verification displays explicit error:
-  *"NSUT student verification is not configured."*
+- **Institutional Email Verification**: Active by default. Enforces `@nsut.ac.in` domain on server and verifies mailbox ownership via Supabase email confirmation.
 - **Empty Database**: Rooms render truthful empty states (*"No messages yet."*, *"No announcements yet."*).
 
 ---
@@ -169,11 +173,17 @@ export interface StudentVerificationProvider {
 }
 ```
 
-- **Current Status**: The external NSUT IT production endpoint is currently an external unconfigured dependency.
-- **Policy**: Campus **never** scrapes the IMS portal, automates IMS login, or collects IMS passwords.
-- **When Unconfigured**: Student verification gracefully halts with a clear configuration message:
-  *"NSUT student verification is not configured."*
-- **Once Configured**: Simply set `NSUT_VERIFICATION_URL`, `NSUT_VERIFICATION_CLIENT_ID`, and `NSUT_VERIFICATION_CLIENT_SECRET` in `.env.local`.
+### Primary Mechanism: Institutional Email Verification (`@nsut.ac.in`)
+- **How it works**: Users sign in with their official university email (`@nsut.ac.in`). Supabase email confirmation (magic link / OTP) verifies ownership of the institutional mailbox.
+- **Server-Enforced Domain**: The server strictly validates that the email domain is `nsut.ac.in` on both sign-in initiation and account verification; client-only checks are never trusted.
+- **Cohort Placement**: Users provide their student ID (e.g., `2025UIT3090`) to determine graduation year and program code via `parseCollegeId()`.
+- **Truthful Verification State**: The system describes this state as **"Verified NSUT institutional email"** and explicitly avoids claiming independent external verification of the student ID.
+- **Role Determination**: If the calendar year has reached or passed the derived graduation year, the account lifecycle is set to `alumni`; otherwise `student`.
+
+### Optional Future Integration: Official NSUT SSO / API
+- The `StudentVerificationProvider` abstraction allows connecting an official NSUT IT endpoint without redesigning the application:
+- Simply set `NSUT_VERIFICATION_URL`, `NSUT_VERIFICATION_CLIENT_ID`, and `NSUT_VERIFICATION_CLIENT_SECRET` in `.env.local`. When present, `getVerificationProvider()` automatically switches to the `ConfiguredNsutProvider`.
+- Policy: Campus **never** scrapes the IMS portal, automates IMS login, or collects IMS passwords.
 
 ---
 

@@ -5,6 +5,7 @@ import {
   StudentVerificationProvider,
   VerifiedStudent,
   VerifyStudentInput,
+  InstitutionalEmailProvider,
 } from "@/lib/verification";
 import { parseCollegeId } from "@/lib/auth/college-id-parser";
 import { generateAnonymousIdentity } from "@/lib/identity/generator";
@@ -27,6 +28,8 @@ class TestFixtureVerificationProvider implements StudentVerificationProvider {
       rollNumber: parsed.rollNumber,
       graduationYear: parsed.graduationYear,
       status: "active",
+      verificationMethod: "institutional_email",
+      isOfficiallyVerified: false,
     };
   }
 }
@@ -46,9 +49,18 @@ describe("Student Verification & Anonymous Identity Issuance Flow", () => {
     expect(verified.valid).toBe(true);
     expect(verified.collegeId).toBe("2025UIT3090");
     expect(verified.graduationYear).toBe(2029);
+    expect(verified.verificationMethod).toBe("institutional_email");
+    expect(verified.isOfficiallyVerified).toBe(false);
 
     const identity = generateAnonymousIdentity();
     expect(identity.displayName).toMatch(/^Anonymous/);
     expect(identity.avatarSeed).toBeDefined();
+  });
+
+  it("defaults to InstitutionalEmailProvider when no override is active", () => {
+    setVerificationProviderForTesting(null);
+    const provider = getVerificationProvider();
+    expect(provider).toBeInstanceOf(InstitutionalEmailProvider);
+    expect(provider.isConfigured()).toBe(true);
   });
 });
