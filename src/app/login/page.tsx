@@ -21,7 +21,7 @@ export default async function LoginPage() {
   }
 
   if (authUser) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   return <LoginForm />;

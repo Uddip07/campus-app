@@ -12,7 +12,7 @@ export default async function CohortChatPage() {
 
   const user = await getSessionUser();
   if (!user) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   // Look up student's cohort room

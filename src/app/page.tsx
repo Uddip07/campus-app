@@ -19,7 +19,7 @@ export default async function HomePage() {
   }
 
   if (authUser) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   redirect("/login");

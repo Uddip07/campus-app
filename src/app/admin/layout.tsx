@@ -15,7 +15,7 @@ export default async function AdminLayout({
 
   const user = await getSessionUser();
   if (!user) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   if (!canModerate(user.role)) {

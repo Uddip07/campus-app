@@ -19,7 +19,7 @@ export default async function DynamicRoomPage({ params }: RoomPageProps) {
 
   const user = await getSessionUser();
   if (!user) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   const { roomId } = params;

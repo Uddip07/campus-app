@@ -92,6 +92,14 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // Loop breaker & explicit onboarding entry:
+  // If request hits /verify with ?setup= (sent by server pages when user has no DB record),
+  // NEVER redirect away from /verify, and clear any stale campus_onboarded cookie!
+  if (pathname === "/verify" && searchParams.has("setup")) {
+    response.cookies.delete("campus_onboarded");
+    return response;
+  }
+
   const isOnboarded =
     user?.user_metadata?.onboarded === true ||
     request.cookies.get("campus_onboarded")?.value === "true";

@@ -139,28 +139,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=unconfirmed_email", request.url));
   }
 
-  // Check whether user has already completed onboarding
-  let isOnboarded = user.user_metadata?.onboarded === true;
-  if (!isOnboarded) {
-    try {
-      const userRecord = await db.query.users.findFirst({
-        where: eq(schema.users.id, user.id),
-        with: {
-          cohort: true,
-          anonymousIdentities: { limit: 1 },
-        },
-      });
-      if (
-        userRecord &&
-        userRecord.cohort &&
-        userRecord.anonymousIdentities &&
-        userRecord.anonymousIdentities.length > 0
-      ) {
-        isOnboarded = true;
-      }
-    } catch {
-      // Database unconfigured or unavailable in mock
+  // Check whether user has already completed onboarding by verifying active database record
+  let isOnboarded = false;
+  try {
+    const userRecord = await db.query.users.findFirst({
+      where: eq(schema.users.id, user.id),
+      with: {
+        cohort: true,
+        anonymousIdentities: { limit: 1 },
+      },
+    });
+    if (
+      userRecord &&
+      userRecord.cohort &&
+      userRecord.anonymousIdentities &&
+      userRecord.anonymousIdentities.length > 0
+    ) {
+      isOnboarded = true;
     }
+  } catch {
+    // In mock or unit test environments without database, fallback to metadata
+    isOnboarded = user.user_metadata?.onboarded === true;
   }
 
   if (isOnboarded) {

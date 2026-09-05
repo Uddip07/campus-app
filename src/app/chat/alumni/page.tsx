@@ -14,7 +14,7 @@ export default async function AlumniChatPage() {
 
   const user = await getSessionUser();
   if (!user) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   const alumniRoom = await db.query.rooms.findFirst({

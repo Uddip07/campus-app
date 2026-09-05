@@ -13,7 +13,7 @@ export default async function ChatPage() {
 
   const user = await getSessionUser();
   if (!user) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   // Look up global room

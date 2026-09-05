@@ -12,7 +12,7 @@ export default async function AllCollegeChatPage() {
 
   const user = await getSessionUser();
   if (!user) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   // Look up global room

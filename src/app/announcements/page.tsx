@@ -10,7 +10,7 @@ export default async function AnnouncementsPage() {
 
   const user = await getSessionUser();
   if (!user) {
-    redirect("/verify");
+    redirect("/verify?setup=required");
   }
 
   return <AnnouncementFeed currentUser={sanitizeUserProfile(user)} />;

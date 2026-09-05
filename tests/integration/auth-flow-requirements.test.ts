@@ -352,5 +352,16 @@ describe("Complete 16-Point Supabase Auth & Session Verification Suite", () => {
     const midResB = await middleware(reqWithoutCode);
     expect(midResB.status).not.toBe(307);
     expect(midResB.headers.get("location")).toBeNull();
+
+    // C: Request to /verify?setup=required clears any stale campus_onboarded cookie and allows page to render without looping to /chat
+    const reqWithSetup = new NextRequest("http://localhost:3000/verify?setup=required", {
+      headers: {
+        cookie: "campus_onboarded=true",
+      },
+    });
+    const midResC = await middleware(reqWithSetup);
+    expect(midResC.status).not.toBe(307);
+    expect(midResC.headers.get("location")).toBeNull();
+    expect(midResC.headers.get("set-cookie")).toContain("campus_onboarded=;");
   });
 });
