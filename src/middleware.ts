@@ -75,6 +75,13 @@ export async function middleware(request: NextRequest) {
   let user = null;
   try {
     const authResult = await supabase.auth.getUser();
+    if (
+      authResult.error &&
+      (authResult.error.message?.includes("Refresh Token") ||
+        (authResult.error as any)?.code === "refresh_token_not_found")
+    ) {
+      await supabase.auth.signOut().catch(() => {});
+    }
     user = authResult?.data?.user ?? null;
   } catch {
     user = null;

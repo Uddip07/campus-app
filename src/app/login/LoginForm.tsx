@@ -69,7 +69,10 @@ function LoginFormContent() {
     const supabase = createClient();
     if (!supabase) return;
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data: { user }, error }) => {
+      if (error && (error.message?.includes("Refresh Token") || (error as any)?.code === "refresh_token_not_found")) {
+        supabase.auth.signOut().catch(() => {});
+      }
       if (user) {
         router.replace("/chat");
       }
