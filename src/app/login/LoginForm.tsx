@@ -1,19 +1,68 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { AlertCircle, Mail, CheckCircle2, Lock, Clock, Info } from "lucide-react";
-import Link from "next/link";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AlertCircle, Lock, Loader2, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-export function LoginForm() {
+function GoogleIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24">
+      <path
+        fill="#4285F4"
+        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
+      />
+    </svg>
+  );
+}
+
+function LoginFormContent() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(0);
-  const isSubmittingRef = useRef(false);
+
+  // Check URL error parameter and display friendly user error
+  useEffect(() => {
+    const errorParam = searchParams.get("error");
+    if (!errorParam) return;
+
+    switch (errorParam) {
+      case "invalid_domain":
+        setError("Only @nsut.ac.in Google accounts can access Campus.");
+        break;
+      case "oauth_cancelled":
+        setError("Sign-in was cancelled. Please sign in with your @nsut.ac.in Google account.");
+        break;
+      case "unconfirmed_email":
+        setError("Your Google account email is not verified. Please use an active @nsut.ac.in account.");
+        break;
+      case "invalid_or_expired_code":
+        setError("Sign-in link or authorization code expired. Please sign in again.");
+        break;
+      case "user_resolution_failed":
+        setError("Could not resolve account from Google. Please try again.");
+        break;
+      case "missing_code":
+        setError("Authentication session was not completed. Please sign in again.");
+        break;
+      default:
+        setError("An authentication error occurred. Please try again.");
+        break;
+    }
+  }, [searchParams]);
 
   // Client-side auth check fallback in case of client navigation
   useEffect(() => {
@@ -22,174 +71,114 @@ export function LoginForm() {
 
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
-        fetch("/api/auth/me").then((res) => {
-          if (res.ok) {
-            router.replace("/chat");
-          } else {
-            router.replace("/verify");
-          }
-        });
+        router.replace("/chat");
       }
     });
   }, [router]);
 
-  // Cooldown countdown timer
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setInterval(() => {
-      setCooldown((prev) => (prev > 1 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [cooldown]);
+  const handleGoogleSignIn = async () => {
+    if (loading) return;
 
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Prevent double submissions or clicking during cooldown
-    if (isSubmittingRef.current || loading || cooldown > 0) return;
-
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) return;
-
-    if (!trimmedEmail.toLowerCase().endsWith("@nsut.ac.in")) {
-      setError("Access restricted: Only official @nsut.ac.in institutional email addresses are permitted.");
-      return;
-    }
-
-    isSubmittingRef.current = true;
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmedEmail }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        const retrySecs = typeof data.retryAfterSeconds === "number" ? data.retryAfterSeconds : 0;
-        if (retrySecs > 0) {
-          setCooldown(retrySecs);
-        }
-        throw new Error(data.error || "Error sending login email");
+      const supabase = createClient();
+      if (!supabase) {
+        throw new Error("Campus authentication service is not configured.");
       }
 
-      setSent(true);
-      // Impose a polite 60s cooldown to protect Supabase SMTP quota
-      setCooldown(60);
+      const nextParam = searchParams.get("next");
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const redirectTo = `${origin}/auth/callback${
+        nextParam ? `?next=${encodeURIComponent(nextParam)}` : ""
+      }`;
+
+      const { error: signInError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          queryParams: {
+            prompt: "select_account",
+            hd: "nsut.ac.in",
+          },
+        },
+      });
+
+      if (signInError) {
+        throw signInError;
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error sending login email");
-    } finally {
+      setError(err instanceof Error ? err.message : "Failed to initiate Google sign in.");
       setLoading(false);
-      isSubmittingRef.current = false;
     }
   };
 
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)] px-4 py-12">
       <div className="w-full max-w-sm bg-card border border-border rounded-xl p-6 sm:p-8 shadow-lg space-y-6">
-        <div className="text-center space-y-1">
-          <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-primary mb-2">
-            <Lock className="h-5 w-5" />
+        <div className="text-center space-y-2">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-primary mb-1">
+            <Lock className="h-6 w-6" />
           </div>
-          <h1 className="text-xl font-bold text-foreground">Sign In to Campus</h1>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">Sign In to Campus</h1>
           <p className="text-xs text-muted-foreground">
-            Enter your official NSUT institutional email
+            Connect using your official NSUT institutional account
           </p>
         </div>
 
         {error && (
-          <div className="p-3 bg-destructive/20 border border-destructive/40 rounded-lg text-xs text-red-200 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p>{error}</p>
-              {cooldown > 0 && (
-                <p className="text-[11px] text-red-300 font-mono flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  Please wait {cooldown}s before trying again.
-                </p>
-              )}
+          <div className="p-3.5 bg-destructive/20 border border-destructive/40 rounded-lg text-xs text-red-200 flex items-start gap-2.5 leading-relaxed">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-400" />
+            <div className="space-y-0.5">
+              <p className="font-semibold text-red-200">Authentication Alert</p>
+              <p className="text-red-300/90">{error}</p>
             </div>
           </div>
         )}
 
-        {sent ? (
-          <div className="text-center py-4 space-y-3">
-            <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto" />
-            <h2 className="text-sm font-bold text-foreground">Check your NSUT inbox</h2>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              We sent a sign-in link to <strong className="text-foreground">{email}</strong>. Click the confirmation link in your email to sign in directly.
-            </p>
-
-            <div className="p-3 bg-secondary/60 rounded-lg border border-border text-[11px] text-muted-foreground text-left space-y-1">
-              <p className="font-semibold text-foreground flex items-center gap-1">
-                <Info className="h-3.5 w-3.5 text-primary" />
-                Already have a confirmation email?
-              </p>
-              <p>
-                Confirmation links remain valid for 1 hour. You can click any link already sent to your inbox without requesting another email.
-              </p>
-            </div>
-
-            {cooldown > 0 ? (
-              <p className="text-xs text-muted-foreground pt-1">
-                Resend link available in <strong className="text-primary font-mono">{cooldown}s</strong>
-              </p>
+        <div className="space-y-4 pt-1">
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className="w-full py-3 px-4 rounded-lg bg-white text-zinc-900 font-semibold text-sm hover:bg-zinc-100 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 border border-zinc-200"
+          >
+            {loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-zinc-600" />
             ) : (
-              <button
-                onClick={() => setSent(false)}
-                className="text-xs text-primary underline pt-2 block mx-auto"
-              >
-                Send another link or use a different email
-              </button>
+              <GoogleIcon className="h-5 w-5" />
             )}
+            <span>{loading ? "Connecting to Google..." : "Continue with Google"}</span>
+          </button>
+
+          <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground font-medium text-center">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Use your <code className="text-primary font-mono font-semibold">@nsut.ac.in</code> Google account</span>
           </div>
-        ) : (
-          <form onSubmit={handleSignIn} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                NSUT Institutional Email
-              </label>
-              <div className="relative">
-                <Mail className="h-4 w-4 absolute left-3 top-2.5 text-muted-foreground" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="rollnumber@nsut.ac.in"
-                  required
-                  disabled={loading}
-                  className="w-full bg-secondary border border-border rounded-lg pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
-                />
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Must end with <code className="text-primary font-mono font-semibold">@nsut.ac.in</code>
-              </p>
-            </div>
+        </div>
 
-            <button
-              type="submit"
-              disabled={loading || cooldown > 0 || !email}
-              className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {loading
-                ? "Sending link..."
-                : cooldown > 0
-                ? `Wait ${cooldown}s to resend`
-                : "Send Verification Sign-in Link"}
-            </button>
-          </form>
-        )}
-
-        <div className="text-center pt-2 border-t border-border/60">
-          <Link href="/verify" className="text-xs text-muted-foreground hover:text-foreground">
-            Already confirmed? <span className="text-primary font-semibold">Complete Batch Setup</span>
-          </Link>
+        <div className="p-3 bg-secondary/50 rounded-lg border border-border text-[11px] text-muted-foreground leading-relaxed text-center space-y-1">
+          <p className="font-medium text-foreground">Anonymous & Encrypted</p>
+          <p>
+            Your Google credentials authenticate your verified campus enrollment. Real names and email addresses are never revealed in public channels.
+          </p>
         </div>
       </div>
     </div>
+  );
+}
+
+export function LoginForm() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)]">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      }
+    >
+      <LoginFormContent />
+    </Suspense>
   );
 }

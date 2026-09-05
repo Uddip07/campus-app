@@ -38,6 +38,9 @@ export const NSUT_PROGRAM_MAP: Record<string, ProgramMetadata> = {
 
   // Doctoral (5 Years)
   PHD: { name: "Doctor of Philosophy", degree: "Ph.D", durationYears: 5 },
+
+  // General / Institutional (4 Years default)
+  GEN: { name: "General / Institutional", degree: "B.Tech", durationYears: 4 },
 };
 
 export interface ParsedCollegeId {

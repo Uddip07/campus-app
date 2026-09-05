@@ -14,7 +14,7 @@ function copyCookies(fromResponse: NextResponse, toResponse: NextResponse): Next
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
-  // If a request hits /verify directly with a ?code= or ?token_hash= parameter (e.g. from an email link),
+  // If a request hits /verify directly with a ?code= or ?token_hash= parameter,
   // route it to /auth/callback so it is properly verified server-side.
   if (pathname === "/verify" && (searchParams.has("code") || searchParams.has("token_hash"))) {
     const callbackUrl = new URL("/auth/callback", request.url);
@@ -100,12 +100,12 @@ export async function middleware(request: NextRequest) {
   } else {
     // Valid Supabase session exists
     if (isOnboarded) {
-      // Valid session + onboarding complete visiting /login, /, /verify
+      // Valid session + onboarding complete visiting /login, /, /verify -> go to /chat
       if (pathname === "/login" || pathname === "/" || pathname === "/verify") {
         return copyCookies(response, NextResponse.redirect(new URL("/chat", request.url)));
       }
     } else {
-      // Valid session + onboarding incomplete
+      // Valid session + onboarding incomplete visiting /login, /, or protected routes -> go to /verify
       if (pathname === "/login" || pathname === "/" || isChatRoute) {
         return copyCookies(response, NextResponse.redirect(new URL("/verify", request.url)));
       }

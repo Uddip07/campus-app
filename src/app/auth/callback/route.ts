@@ -4,13 +4,25 @@ import { getSupabaseConfig, isAllowedInstitutionalEmail } from "@/lib/env";
 import { sanitizeRedirectPath } from "@/lib/auth/redirect";
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
-
 import { type EmailOtpType } from "@supabase/supabase-js";
 
 const COOKIE_MAX_AGE = 400 * 24 * 60 * 60; // 400 days persistent
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
+
+  // 1. Handle OAuth provider errors (e.g. user cancelled or denied Google OAuth)
+  const oauthError = requestUrl.searchParams.get("error");
+  const oauthErrorDescription = requestUrl.searchParams.get("error_description");
+
+  if (oauthError) {
+    console.warn(`[AuthCallback] OAuth provider returned error: ${oauthError} - ${oauthErrorDescription}`);
+    if (oauthError === "access_denied" || oauthError.includes("cancel")) {
+      return NextResponse.redirect(new URL("/login?error=oauth_cancelled", request.url));
+    }
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(oauthError)}`, request.url));
+  }
+
   const code = requestUrl.searchParams.get("code");
   const token_hash = requestUrl.searchParams.get("token_hash");
   const type = requestUrl.searchParams.get("type") as EmailOtpType | null;
@@ -80,7 +92,7 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  // Verify either via token_hash (for custom email templates) or PKCE authorization code
+  // Verify either via token_hash (fallback) or PKCE authorization code (Google OAuth)
   if (token_hash && type) {
     const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash, type });
     if (verifyError) {
@@ -113,14 +125,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=invalid_domain", request.url));
   }
 
-  const isEmailConfirmed = Boolean(user.email_confirmed_at || user.confirmed_at);
+  const isEmailConfirmed = Boolean(
+    user.email_confirmed_at ||
+      user.confirmed_at ||
+      user.identities?.some(
+        (id) => id.provider === "google" && (id.identity_data?.email_verified ?? true)
+      )
+  );
+
   if (!isEmailConfirmed) {
     console.warn(`[AuthCallback] User email is not confirmed: ${userEmail}`);
     await supabase.auth.signOut();
     return NextResponse.redirect(new URL("/login?error=unconfirmed_email", request.url));
   }
 
-  // Determine whether user has already completed onboarding
+  // Check whether user has already completed onboarding
   let isOnboarded = user.user_metadata?.onboarded === true;
   if (!isOnboarded) {
     try {
@@ -131,7 +150,12 @@ export async function GET(request: NextRequest) {
           anonymousIdentities: { limit: 1 },
         },
       });
-      if (userRecord && userRecord.cohort && userRecord.anonymousIdentities && userRecord.anonymousIdentities.length > 0) {
+      if (
+        userRecord &&
+        userRecord.cohort &&
+        userRecord.anonymousIdentities &&
+        userRecord.anonymousIdentities.length > 0
+      ) {
         isOnboarded = true;
       }
     } catch {
@@ -145,7 +169,21 @@ export async function GET(request: NextRequest) {
       sameSite: "lax",
       maxAge: COOKIE_MAX_AGE,
     });
-    // If next target was default fallback (/verify), redirect directly to /chat
+
+    if (typeof supabase?.auth?.updateUser === "function") {
+      try {
+        const updatePromise = supabase.auth.updateUser({
+          data: { onboarded: true },
+        });
+        if (updatePromise && typeof updatePromise.catch === "function") {
+          await updatePromise.catch(() => {});
+        }
+      } catch {
+        // Silently continue
+      }
+    }
+
+    // If next target was default fallback (/verify), redirect directly to /chat for onboarded users
     if (next === "/verify") {
       const chatTarget = new URL("/chat", request.url);
       response.headers.set("Location", chatTarget.toString());

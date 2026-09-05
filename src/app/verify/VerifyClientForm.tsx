@@ -12,7 +12,10 @@ interface VerifyClientFormProps {
 
 export function VerifyClientForm({ initialEmail }: VerifyClientFormProps) {
   const router = useRouter();
-  const [collegeId, setCollegeId] = useState("");
+  const initialStudentId = initialEmail
+    ? initialEmail.split("@")[0].toUpperCase().match(/^(\d{4}[A-Z]{2,5}\d{2,6})$/)?.[1] ?? ""
+    : "";
+  const [collegeId, setCollegeId] = useState(initialStudentId);
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(!initialEmail);
   const [authenticatedEmail, setAuthenticatedEmail] = useState<string | null>(initialEmail ?? null);
@@ -45,8 +48,12 @@ export function VerifyClientForm({ initialEmail }: VerifyClientFormProps) {
 
     // Initial check for existing session
     supabase.auth.getUser().then(({ data: { user }, error: userError }) => {
-      if (user && !userError) {
-        setAuthenticatedEmail(user.email ?? null);
+      if (user && !userError && user.email) {
+        setAuthenticatedEmail(user.email);
+        const match = user.email.split("@")[0].toUpperCase().match(/^(\d{4}[A-Z]{2,5}\d{2,6})$/);
+        if (match) {
+          setCollegeId((prev) => prev || match[1]);
+        }
       }
       setAuthLoading(false);
     });
@@ -57,6 +64,10 @@ export function VerifyClientForm({ initialEmail }: VerifyClientFormProps) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user?.email) {
         setAuthenticatedEmail(session.user.email);
+        const match = session.user.email.split("@")[0].toUpperCase().match(/^(\d{4}[A-Z]{2,5}\d{2,6})$/);
+        if (match) {
+          setCollegeId((prev) => prev || match[1]);
+        }
         setAuthLoading(false);
       }
     });

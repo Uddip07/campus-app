@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 const mockExchangeCodeForSession = vi.fn();
 const mockGetUser = vi.fn();
 const mockSignOut = vi.fn();
+const mockUpdateUser = vi.fn().mockResolvedValue({ data: {}, error: null });
 
 vi.mock("@supabase/ssr", () => ({
   createServerClient: vi.fn(() => ({
@@ -12,6 +13,7 @@ vi.mock("@supabase/ssr", () => ({
       exchangeCodeForSession: mockExchangeCodeForSession,
       getUser: mockGetUser,
       signOut: mockSignOut,
+      updateUser: mockUpdateUser,
     },
   })),
 }));
@@ -35,6 +37,16 @@ import { GET } from "@/app/auth/callback/route";
 describe("Auth Callback Route Handler (GET /auth/callback)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("handles OAuth provider cancellation (?error=access_denied) gracefully", async () => {
+    const req = new NextRequest("http://localhost:3000/auth/callback?error=access_denied&error_description=User+cancelled");
+    const response = await GET(req);
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toContain("/login?error=oauth_cancelled");
+    expect(mockExchangeCodeForSession).not.toHaveBeenCalled();
   });
 
   it("returns client-side hash handler when ?code= is absent", async () => {
@@ -87,7 +99,7 @@ describe("Auth Callback Route Handler (GET /auth/callback)", () => {
     expect(mockSignOut).toHaveBeenCalled();
   });
 
-  it("exchanges valid code for session, enforces @nsut.ac.in domain, and sanitizes open redirects", async () => {
+  it("exchanges valid code for session, enforces @nsut.ac.in domain, redirects onboarded user to /chat, and sanitizes open redirects", async () => {
     mockExchangeCodeForSession.mockResolvedValueOnce({
       data: { session: { access_token: "token" } },
       error: null,
@@ -98,6 +110,7 @@ describe("Auth Callback Route Handler (GET /auth/callback)", () => {
           id: "user-123",
           email: "2025uit3090@nsut.ac.in",
           email_confirmed_at: "2026-09-04T00:00:00Z",
+          user_metadata: { onboarded: true },
         },
       },
       error: null,
@@ -111,11 +124,12 @@ describe("Auth Callback Route Handler (GET /auth/callback)", () => {
 
     expect(response.status).toBe(307);
     const location = response.headers.get("location");
-    // Open redirect sanitized to /verify
-    expect(location).toBe("http://localhost:3000/verify");
+    // Open redirect sanitized to /chat for onboarded user
+    expect(location).toBe("http://localhost:3000/chat");
+    expect(response.headers.get("set-cookie")).toContain("campus_onboarded=true");
   });
 
-  it("exchanges valid code and redirects to legitimate relative next path", async () => {
+  it("exchanges valid code for session and redirects first-time un-onboarded user to /verify", async () => {
     mockExchangeCodeForSession.mockResolvedValueOnce({
       data: { session: { access_token: "token" } },
       error: null,
@@ -126,6 +140,34 @@ describe("Auth Callback Route Handler (GET /auth/callback)", () => {
           id: "user-123",
           email: "2025uit3090@nsut.ac.in",
           email_confirmed_at: "2026-09-04T00:00:00Z",
+          user_metadata: {},
+        },
+      },
+      error: null,
+    });
+
+    const req = new NextRequest(
+      "http://localhost:3000/auth/callback?code=valid-pkce-code"
+    );
+    const response = await GET(req);
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toBe("http://localhost:3000/verify");
+  });
+
+  it("exchanges valid code and redirects to legitimate relative next path for onboarded user", async () => {
+    mockExchangeCodeForSession.mockResolvedValueOnce({
+      data: { session: { access_token: "token" } },
+      error: null,
+    });
+    mockGetUser.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: "user-123",
+          email: "2025uit3090@nsut.ac.in",
+          email_confirmed_at: "2026-09-04T00:00:00Z",
+          user_metadata: { onboarded: true },
         },
       },
       error: null,
@@ -153,6 +195,7 @@ describe("Auth Callback Route Handler (GET /auth/callback)", () => {
           email: "2025uit3090@nsut.ac.in",
           email_confirmed_at: null,
           confirmed_at: null,
+          identities: [],
         },
       },
       error: null,
