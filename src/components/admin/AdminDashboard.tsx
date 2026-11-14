@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { UserSessionProfile, AdminStatsDTO, ReportDTO, AuditLogDTO } from "@/lib/types";
 import {
   Shield,
@@ -15,6 +16,7 @@ import {
   Trash2,
   VolumeX,
   UserX,
+  Database,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -182,9 +184,20 @@ export function AdminDashboard({ currentUser }: AdminDashboardProps) {
             Role: <span className="font-semibold uppercase text-foreground">{currentUser.role}</span> · Audited administrative boundary
           </p>
         </div>
+        {isAdminOrSuper && (
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin/database"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm"
+            >
+              <Database className="h-3.5 w-3.5" />
+              MongoDB Database Explorer
+            </Link>
+          </div>
+        )}
       </div>
 
-      {/* Metric Cards (Real PostgreSQL counts - Zero Mock Data) */}
+      {/* Metric Cards (Real MongoDB counts - Zero Mock Data) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-4 rounded-lg bg-card border border-border">
           <div className="flex items-center justify-between text-muted-foreground mb-1">
