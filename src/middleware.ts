@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
   });
 
   const { url, publishableKey, isConfigured } = getSupabaseConfig();
-  if (!isConfigured) {
+  if (!isConfigured || process.env.OFFLINE_MODE === "true") {
     return response;
   }
 

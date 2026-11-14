@@ -1,208 +1,166 @@
-# Campus — Anonymous NSUT Community Platform
+# CampusConnect — Anonymous NSUT Community Platform
 
-Campus is a verified, pseudonymous communication platform engineered specifically for the Netaji Subhas University of Technology (NSUT) community. Students verify their institutional identity to participate, receive an unguessable anonymous public alias, and converse in College-wide, Cohort-specific, and Alumni rooms. The backend maintains the cryptographic identity link under strict RBAC and audited resolution protocols.
+CampusConnect is a verified, pseudonymous student and academic collaboration platform designed specifically for the **Netaji Subhas University of Technology (NSUT)** community. Built as a university Database Management Systems (DBMS) project, it combines institutional email authentication, cryptographic anonymous identities, partitioned batch and alumni discussion rooms, university announcements, moderation queues, audit logging, and an interactive **MongoDB Database Administration Explorer**.
 
 ---
 
 ## 1. Architectural Principles & Anonymity Boundary
 
-1. **Zero Client Leakage**: Public users and API responses NEVER receive student names, college IDs, institutional emails, roll numbers, or internal user UUIDs. The client only sees:
+1. **Zero Client Leakage**: Public users and client API responses NEVER receive student names, college IDs, institutional emails, roll numbers, or internal user ObjectIds. The client only sees:
    ```json
    {
      "displayName": "AnonymousCosmicFox42",
      "avatarSeed": "a1b2c3d4",
-     "cohort": 2029
+     "cohort": 2028
    }
    ```
-2. **PostgreSQL as Source of Truth**: Messages, reactions, reports, bans, and announcements are fully persisted in PostgreSQL before broadcast.
-3. **Realtime Broadcast**: Uses Supabase Realtime broadcast channels for sub-second live message synchronization across connected browser sessions.
-4. **Privileged Audited Resolution**: Only users with the `super_admin` role can resolve an anonymous identity to a student record. Every resolution mandates a legitimate reason (min 10 characters) and creates an immutable audit trail entry.
-5. **Zero Mock Data**: No hardcoded mock users, mock chats, mock announcements, or fake statistics exist anywhere in the application runtime. If a room or queue is empty, it truthfully displays an empty state (e.g., *"No messages yet."*).
+2. **MongoDB as Primary Application Database**: All application collections (`users`, `cohorts`, `anonymousidentities`, `rooms`, `messages`, `messagereactions`, `reports`, `bans`, `announcements`, `announcementattachments`, `auditlogs`, `notificationdevices`) are persisted in MongoDB via Mongoose.
+3. **Realtime Broadcast**: Utilizes Supabase Realtime broadcast channels for live message and reaction synchronization across active browser sessions.
+4. **Stable Composite Cursor Pagination**: Message streams use a deterministic composite cursor `(createdAt, _id)` encoded in Base64url to ensure $O(1)$ index seek performance and zero missed messages during simultaneous postings.
+5. **Privileged Audited Resolution**: Only users with the `super_admin` role can resolve an anonymous identity to a student record. Every resolution mandates a legitimate reason ($\ge 10$ characters) and records an immutable entry in `auditlogs`.
+6. **Zero Mock Data**: No hardcoded mock users, mock chats, or fabricated statistics exist in the application runtime. All statistics are queried live from MongoDB collections.
 
 ---
 
-## 2. Prerequisites
+## 2. Technology Stack
 
-- **Node.js**: v18.17.0+ or v20+ (tested on Node v24)
-- **npm**: v9+ (or pnpm / yarn)
-- **PostgreSQL Database** (e.g. Supabase Postgres instance)
-- **Supabase Project** (for Auth, Realtime, and Storage)
-- **Redis / Upstash** (Optional for local development; in-memory limiter used with explicit warning if unconfigured)
+- **Framework**: Next.js `^14.2.24` (App Router, Server Components & Route Handlers)
+- **Language**: TypeScript `^5.7.3` (Strict mode enabled)
+- **Styling**: Tailwind CSS `^3.4.17`, Lucide Icons
+- **Primary Database**: MongoDB Atlas (v7.0+ / M0 Sandbox) via Mongoose `^8.10.x`
+- **Auth & Realtime**: `@supabase/ssr` & `@supabase/supabase-js` (Auth session cookies & WebSockets)
+- **Validation**: Zod `^3.24.1`
+- **Testing**: Vitest `^2.1.8` (15 test suites, 103 automated tests)
 
 ---
 
-## 3. Installation
+## 3. Prerequisites
 
-Clone the repository and install dependencies:
+- **Node.js**: `v18.17.0+`, `v20+`, or `v24+`
+- **npm**: `v9+` or `v11+`
+- **MongoDB Database**: MongoDB Atlas cluster URI or local MongoDB instance (`mongodb://127.0.0.1:27017/campusconnect`)
+- **Supabase Project**: For Authentication sessions and Realtime WebSockets
+
+---
+
+## 4. Installation & Local Setup
 
 ```bash
-git clone <repository-url>
+# 1. Clone the repository
+git clone https://github.com/Uddip07/dbms-project.git
 cd campus-app
+
+# 2. Install dependencies
 npm install
-```
 
----
-
-## 4. Environment Configuration
-
-Copy `.env.example` to `.env.local`:
-
-```bash
+# 3. Configure environment variables
 cp .env.example .env.local
 ```
 
-Every value in `.env.example` is left blank by design. Populate the required values from your infrastructure providers:
+### Environment Configuration (`.env.local`)
+
+Populate `.env.local` with your database and service credentials (values kept private):
 
 ```env
+# MongoDB Atlas Connection URI (Primary Application Database)
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/campusconnect?retryWrites=true&w=majority
+
 # Supabase Configuration (Supabase Dashboard -> Project Settings -> API Keys)
-NEXT_PUBLIC_SUPABASE_URL=https://<your-project-id>.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<your-publishable-key>
-SUPABASE_SECRET_KEY=<your-secret-key>
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable-anon-key>
+SUPABASE_SECRET_KEY=<service-role-secret-key>
 
-# Database Connection (Supabase Dashboard -> Database -> Connection string URI)
-DATABASE_URL=postgresql://postgres:<password>@db.<your-project-id>.supabase.co:5432/postgres
-
-# Rate Limiting & Ephemeral Cache (Upstash / Redis)
-# Optional in local development (falls back to in-memory limiter with development warning)
+# Ephemeral Cache & Rate Limiting (Optional in local development)
 REDIS_URL=
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
-
-# Error Tracking (Optional)
-SENTRY_DSN=
-
-# NSUT Institutional Email Verification (Primary / Prototype Default)
-# Primary verification requires users to sign in and confirm an @nsut.ac.in email address.
-# No external verification API is required for this mechanism.
-
-# Optional: Official NSUT Verification Integration Boundary (Future / Production SSO)
-# If configured, the system will switch to the official external NSUT verification authority API.
-# Leave blank to use institutional email verification.
-NSUT_VERIFICATION_URL=
-NSUT_VERIFICATION_CLIENT_ID=
-NSUT_VERIFICATION_CLIENT_SECRET=
 ```
 
 ---
 
-## 5. Database Setup & Migrations
+## 5. Database Initialization & Seeding
 
-Campus uses PostgreSQL with Row Level Security (RLS). Apply the migration scripts to your PostgreSQL database:
+CampusConnect includes a comprehensive database seed script that provisions default cohorts (2024–2033), system rooms, and baseline demonstration records:
 
-1. **Apply Initial Schema**:
-   Run `infrastructure/sql/001_initial.sql` in your Supabase SQL Editor or via `psql`. This creates:
-   - Enums: `user_role`, `user_status`, `room_type`, `moderation_status`, `report_status`, `announcement_audience`, `ban_type`.
-   - Core tables: `cohorts`, `users`, `anonymous_identities`, `rooms`, `messages`, `message_reactions`, `reports`, `bans`, `announcements`, `announcement_attachments`, `audit_logs`, `notification_devices`.
-   - Structural seeds: Pre-populates cohort years (2026–2033) and system rooms (*All College*, *Alumni*, and batch cohort rooms). Zero fake users or fake chats are inserted.
+```bash
+# Seed MongoDB collections with structural data and demonstration personas
+npm run db:seed
+```
 
-2. **Apply Row Level Security (RLS) Policies**:
-   Run `infrastructure/sql/002_rls.sql` in your SQL editor. This enables RLS across all 12 tables and enforces JWT-based access controls for rooms, messages, reports, announcements, and profiles.
-
-3. **Storage Bucket**:
-   Create a public bucket named `announcements` in Supabase Storage if you plan to upload announcement attachments.
+### Seeded Demonstration Personas:
+- **Super Admin**: `admin@nsut.ac.in` (`2022UIT0001`, Handle: `StaffGuardian01`)
+- **Moderator**: `moderator@nsut.ac.in` (`2022CS0100`, Handle: `AnonymousWiseOwl17`)
+- **Student**: `student@nsut.ac.in` (`2024UIT1010`, Batch 2028, Handle: `AnonymousCosmicFox42`)
+- **Alumni**: `alumni@nsut.ac.in` (`2020ECE0055`, Batch 2024, Handle: `AnonymousSilverFalcon88`)
 
 ---
 
-## 6. Local Development
-
-Start the development server:
+## 6. Running the Application
 
 ```bash
+# Start local development server
 npm run dev
+
+# Open http://localhost:3000 in your browser
 ```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### Expected Startup Behavior:
-- **Missing Supabase Config**: Clear alert indicating Supabase configuration is missing.
-- **Missing Redis**: Application runs normally; logs development warning:
-  `[RateLimit] Warning: Redis is unconfigured. Operating with in-memory development rate limiter.`
-- **Institutional Email Verification**: Active by default. Enforces `@nsut.ac.in` domain on server and verifies mailbox ownership via Supabase email confirmation.
-- **Empty Database**: Rooms render truthful empty states (*"No messages yet."*, *"No announcements yet."*).
 
 ---
 
-## 7. Automated Testing & Verification
-
-Run the test suite (unit tests, integration tests, and security boundaries):
+## 7. Testing & Quality Verification
 
 ```bash
+# Run complete automated Vitest test suite (15 suites, 103 tests)
 npm test
-```
 
-To run tests in watch mode:
-
-```bash
-npm run test:watch
-```
-
-Run static type checking:
-
-```bash
+# Run TypeScript strict type verification
 npm run typecheck
-```
 
-### Test Coverage Highlights:
-- **College ID Parsing**: Validates patterns (e.g. `2025UIT3090`, `2024COE1020`), rejects malformed inputs, validates branch codes, and derives cohort graduation years (`enrollmentYear + duration`).
-- **Anonymous Identity**: Verifies entropy, format (`Anonymous<Adj><Noun><Num>`), uniqueness, and absence of hardcoded names.
-- **RBAC & Room Authorization**: Verifies access matrix across `student`, `alumni`, `moderator`, `admin`, `super_admin`.
-- **Security Boundaries**: Confirms students cannot access other cohorts, cannot create announcements, cannot resolve identities, and that public profiles never leak real student data.
+# Run ESLint static analysis
+npm run lint
 
----
-
-## 8. Production Build
-
-Verify the production build:
-
-```bash
+# Build optimized production bundle
 npm run build
-npm start
 ```
 
 ---
 
-## 9. NSUT Student Verification Integration
+## 8. Database Administration & Visual Explorer
 
-The platform abstracts student verification through the `StudentVerificationProvider` interface:
-
-```typescript
-export interface StudentVerificationProvider {
-  name: string;
-  isConfigured(): boolean;
-  verifyStudent(input: VerifyStudentInput): Promise<VerifiedStudent>;
-}
-```
-
-### Primary Mechanism: Institutional Email Verification (`@nsut.ac.in`)
-- **How it works**: Users sign in with their official university email (`@nsut.ac.in`). Supabase email confirmation (magic link / OTP) verifies ownership of the institutional mailbox.
-- **Server-Enforced Domain**: The server strictly validates that the email domain is `nsut.ac.in` on both sign-in initiation and account verification; client-only checks are never trusted.
-- **Cohort Placement**: Users provide their student ID (e.g., `2025UIT3090`) to determine graduation year and program code via `parseCollegeId()`.
-- **Truthful Verification State**: The system describes this state as **"Verified NSUT institutional email"** and explicitly avoids claiming independent external verification of the student ID.
-- **Role Determination**: If the calendar year has reached or passed the derived graduation year, the account lifecycle is set to `alumni`; otherwise `student`.
-
-### Optional Future Integration: Official NSUT SSO / API
-- The `StudentVerificationProvider` abstraction allows connecting an official NSUT IT endpoint without redesigning the application:
-- Simply set `NSUT_VERIFICATION_URL`, `NSUT_VERIFICATION_CLIENT_ID`, and `NSUT_VERIFICATION_CLIENT_SECRET` in `.env.local`. When present, `getVerificationProvider()` automatically switches to the `ConfiguredNsutProvider`.
-- Policy: Campus **never** scrapes the IMS portal, automates IMS login, or collects IMS passwords.
+CampusConnect includes an administrative database inspector at `/admin/database`:
+- **Real-Time Health Pill**: Shows live MongoDB Atlas connection status and host.
+- **Collection Browser**: Inspect documents across all 12 collections with BSON ObjectId display, pagination, and text/ID search.
+- **JSON Inspector Modal**: Formatted view with one-click JSON copying.
+- **Collection Export**: Stream-export up to 1,000 collection documents as structured JSON.
+- **Engine Metrics & Indexes**: Inspect compound B-Tree indexes, storage size, and Mongoose model configurations.
+- **Schema Relationships**: Visual representation of foreign key references across entities.
 
 ---
 
-## 10. Initial Admin Setup
+## 9. Cloud Deployment (Vercel & MongoDB Atlas)
 
-To grant administrative access to a verified account:
+1. **MongoDB Atlas Network Access**:
+   - In MongoDB Atlas $\to$ **Network Access**, add `0.0.0.0/0` (Allow Access from Anywhere) to permit connections from Vercel dynamic serverless IP ranges.
+2. **Vercel Environment Variables**:
+   - In Vercel Project Settings $\to$ **Environment Variables**, set:
+     - `MONGODB_URI`
+     - `NEXT_PUBLIC_SUPABASE_URL`
+     - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+     - `SUPABASE_SECRET_KEY`
+3. **Deploy**:
+   - Trigger deployment via Git push to `main` or `feature/campusconnect-final-submission`.
 
-1. Sign in and complete student verification with your account.
-2. In your Supabase SQL Editor, run:
-   ```sql
-   UPDATE users
-   SET role = 'super_admin'
-   WHERE college_id = 'YOUR_COLLEGE_ID';
-   ```
-3. Refresh the app. The **Admin** tab will appear in the navigation bar.
+---
 
-### Role Hierarchy:
-- **`student`**: Global chat, own cohort batch room, message replies, reactions, reports.
-- **`alumni`**: Global chat, alumni room, replies, reactions, reports.
-- **`moderator`**: Room access, reports queue (dismiss, warn, mute user, temp ban, permanent ban, remove message).
-- **`admin`**: All moderation powers + create/delete announcements + user management.
-- **`super_admin`**: Full admin access + privileged audited identity resolution + audit log inspection.
+## 10. Comprehensive Documentation Index
+
+- **Database Architecture Suite**:
+  - [ER Diagram Specification](docs/database/ER_DIAGRAM.md) & [Mermaid Source](docs/database/ER_DIAGRAM.mmd)
+  - [Relational Schema & Integrity Constraints](docs/database/RELATIONAL_SCHEMA.md)
+  - [Functional Dependencies & Candidate Keys](docs/database/FUNCTIONAL_DEPENDENCIES.md)
+  - [Mathematical Normalization & Proofs](docs/database/NORMALIZATION.md)
+  - [MongoDB Schema Design & Referencing Rationale](docs/database/MONGODB_SCHEMA.md)
+  - [Indexes & Composite Cursor Pagination](docs/database/INDEXES.md)
+  - [Collections Field Catalog](docs/database/COLLECTIONS.md)
+- **Project Report**: [University DBMS Project Report (27 Sections)](docs/PROJECT_REPORT.md)
+- **Testing Report**: [QA & Verification Results (103 Tests)](docs/TESTING_REPORT.md)
+- **Live Demo Protocol**: [Step-by-Step Demonstration Walkthrough](docs/DEMO_GUIDE.md)
