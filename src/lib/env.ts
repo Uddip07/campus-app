@@ -31,25 +31,30 @@ export function assertSupabaseConfigured(): void {
   }
 }
 
-export function getDatabaseConfig() {
-  const url = process.env.DATABASE_URL;
+export function getMongoConfig() {
+  const url = process.env.MONGODB_URI;
   return {
     url: url || "",
     isConfigured: Boolean(url),
   };
 }
 
-export function isDatabaseConfigured(): boolean {
-  return getDatabaseConfig().isConfigured;
+export function isMongoConfigured(): boolean {
+  return getMongoConfig().isConfigured;
 }
 
-export function assertDatabaseConfigured(): void {
-  if (!isDatabaseConfigured()) {
+export function assertMongoConfigured(): void {
+  if (!isMongoConfigured()) {
     throw new Error(
-      "Database connection is unavailable: DATABASE_URL is not configured."
+      "MongoDB connection is unavailable: MONGODB_URI is not configured in environment."
     );
   }
 }
+
+// Backward-compatible aliases
+export const getDatabaseConfig = getMongoConfig;
+export const isDatabaseConfigured = isMongoConfigured;
+export const assertDatabaseConfigured = assertMongoConfigured;
 
 export function getNsutVerificationConfig() {
   const url = process.env.NSUT_VERIFICATION_URL;
