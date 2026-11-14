@@ -33,3 +33,9 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# Agent and MCP Configurations
+.mcp.json
+.agents/
+skills-lock.json
+
