@@ -1,0 +1,149 @@
+erDiagram
+    COHORTS ||--o{ USERS : "contains"
+    COHORTS ||--o{ ROOMS : "defines"
+    COHORTS ||--o{ ANNOUNCEMENTS : "targets"
+    USERS ||--o{ ANONYMOUS_IDENTITIES : "possesses"
+    USERS ||--o{ MESSAGES : "authors"
+    USERS ||--o{ MESSAGE_REACTIONS : "reacts"
+    USERS ||--o{ REPORTS : "files"
+    USERS ||--o{ REPORTS : "moderates"
+    USERS ||--o{ BANS : "receives"
+    USERS ||--o{ BANS : "issues"
+    USERS ||--o{ ANNOUNCEMENTS : "publishes"
+    USERS ||--o{ AUDIT_LOGS : "triggers"
+    USERS ||--o{ NOTIFICATION_DEVICES : "registers"
+    ROOMS ||--o{ MESSAGES : "houses"
+    MESSAGES ||--o{ MESSAGES : "replies_to"
+    MESSAGES ||--o{ MESSAGE_REACTIONS : "receives"
+    MESSAGES ||--o{ REPORTS : "targeted_by"
+    ANNOUNCEMENTS ||--o{ ANNOUNCEMENT_ATTACHMENTS : "includes"
+
+    COHORTS {
+        ObjectId id PK
+        int graduationYear UK
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    USERS {
+        ObjectId id PK
+        string authId UK "sparse"
+        string collegeId UK
+        string collegeEmail UK
+        int enrollmentYear
+        string programCode
+        string rollNumber
+        ObjectId cohortId FK
+        string role "student|alumni|moderator|admin|super_admin"
+        string status "active|suspended|banned"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    ANONYMOUS_IDENTITIES {
+        ObjectId id PK
+        ObjectId userId FK
+        string displayName UK
+        string avatarSeed
+        datetime validFrom
+        datetime validUntil
+        bool isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    ROOMS {
+        ObjectId id PK
+        string type "global|cohort|alumni"
+        string name
+        ObjectId cohortId FK "nullable"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    MESSAGES {
+        ObjectId id PK
+        ObjectId roomId FK
+        ObjectId senderId FK
+        string content
+        ObjectId replyToId FK "nullable"
+        string moderationStatus "approved|pending|rejected|removed"
+        datetime deletedAt "nullable"
+        datetime editedAt "nullable"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    MESSAGE_REACTIONS {
+        ObjectId id PK
+        ObjectId messageId FK
+        ObjectId userId FK
+        string reaction "like|love|laugh|wow|sad|angry"
+        datetime createdAt
+    }
+
+    REPORTS {
+        ObjectId id PK
+        ObjectId messageId FK
+        ObjectId reporterId FK
+        string reason
+        string description "nullable"
+        string status "pending|resolved|dismissed"
+        ObjectId reviewedBy FK "nullable"
+        datetime resolvedAt "nullable"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    BANS {
+        ObjectId id PK
+        ObjectId userId FK
+        string type "mute|temp_ban|permanent_ban"
+        string reason
+        datetime expiresAt "nullable"
+        ObjectId createdBy FK
+        datetime createdAt
+    }
+
+    ANNOUNCEMENTS {
+        ObjectId id PK
+        string title
+        string content
+        ObjectId authorId FK
+        string audienceType "all|cohort|alumni"
+        ObjectId cohortId FK "nullable"
+        bool isPinned
+        datetime publishedAt
+        datetime expiresAt "nullable"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    ANNOUNCEMENT_ATTACHMENTS {
+        ObjectId id PK
+        ObjectId announcementId FK
+        string storagePath
+        string fileName
+        string mimeType
+        int fileSize
+        datetime createdAt
+    }
+
+    AUDIT_LOGS {
+        ObjectId id PK
+        ObjectId actorId FK
+        string action
+        string targetType
+        string targetId "nullable"
+        object metadata
+        datetime createdAt
+    }
+
+    NOTIFICATION_DEVICES {
+        ObjectId id PK
+        ObjectId userId FK
+        string pushToken UK
+        string platform "web|ios|android"
+        datetime createdAt
+        datetime lastSeenAt
+    }
