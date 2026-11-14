@@ -334,7 +334,7 @@ export function AdminDashboard({ currentUser }: AdminDashboardProps) {
 
               {report.description && (
                 <p className="text-xs text-muted-foreground italic">
-                  Note: "{report.description}"
+                  Note: &ldquo;{report.description}&rdquo;
                 </p>
               )}
 

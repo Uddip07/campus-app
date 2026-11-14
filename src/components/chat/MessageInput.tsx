@@ -61,7 +61,7 @@ export function MessageInput({
               {replyingTo.sender.displayName}
             </span>
             <span className="text-muted-foreground truncate max-w-xs">
-              "{replyingTo.content}"
+              &ldquo;{replyingTo.content}&rdquo;
             </span>
           </div>
           <button

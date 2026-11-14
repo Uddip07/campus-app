@@ -133,7 +133,7 @@ export function Navbar({ user, authenticatedEmail }: NavbarProps) {
                   {user.anonymousName}
                 </span>
                 <span className="text-muted-foreground text-[11px]">
-                  '{String(user.cohort).slice(-2)}
+                  &apos;{String(user.cohort).slice(-2)}
                 </span>
               </div>
 
