@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from "../supabase/server";
 import { connectToDatabase } from "@/db/mongodb";
 import { db, User, Cohort, AnonymousIdentity, Ban } from "@/db";
 import { UserRole, UserStatus, UserSessionProfile } from "../types";
+import { cookies } from "next/headers";
 import mongoose from "mongoose";
 
 export interface FullUserContext {
@@ -40,6 +41,55 @@ export async function getAuthenticatedAuthUser() {
  * Returns null if not logged in or onboarding incomplete.
  */
 export async function getSessionUser(): Promise<FullUserContext | null> {
+  // If explicitly in offline demonstration mode, resolve local seeded persona
+  if (process.env.OFFLINE_MODE === "true") {
+    try {
+      await connectToDatabase();
+      let requestedRole: string = "super_admin";
+      try {
+        const cookieStore = cookies();
+        requestedRole = cookieStore.get("campus_offline_role")?.value || "super_admin";
+      } catch {
+        requestedRole = "super_admin";
+      }
+
+      const userDoc: any =
+        (await User.findOne({ role: requestedRole as any }).lean()) ||
+        (await User.findOne({}).lean());
+      if (userDoc) {
+        const cohort: any = await Cohort.findById(userDoc.cohortId).lean();
+        const identity: any = (await AnonymousIdentity.findOne({
+          userId: userDoc._id,
+          isActive: true,
+        }).lean()) || {
+          _id: new mongoose.Types.ObjectId(),
+          displayName: "StaffGuardian01",
+          avatarSeed: "StaffGuardian01",
+        };
+        const ban = await Ban.findOne({
+          userId: userDoc._id,
+          $or: [{ expiresAt: { $gt: new Date() } }, { expiresAt: null }],
+        }).lean();
+
+        return {
+          userId: userDoc._id.toString(),
+          collegeId: userDoc.collegeId,
+          collegeEmail: userDoc.collegeEmail,
+          role: userDoc.role,
+          status: userDoc.status,
+          cohortId: userDoc.cohortId.toString(),
+          graduationYear: cohort?.graduationYear || 2026,
+          anonymousIdentityId: identity._id.toString(),
+          anonymousName: identity.displayName,
+          avatarSeed: identity.avatarSeed,
+          isMutedOrBanned: Boolean(ban),
+        };
+      }
+    } catch (e) {
+      console.warn("[OfflineMode] Fallback resolution failed:", e);
+    }
+  }
+
   const supabase = createServerSupabaseClient();
   if (!supabase) {
     return null;
