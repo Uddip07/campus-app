@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { canModerate } from "@/lib/auth/rbac";
-import { db, schema } from "@/db";
-import { eq, count } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { User, Report, Announcement } from "@/db/models";
 import { AdminStatsDTO } from "@/lib/types";
 
 export async function GET() {
@@ -19,31 +19,22 @@ export async function GET() {
       );
     }
 
-    // Query real counts from PostgreSQL
-    const [studentCountResult] = await db
-      .select({ count: count() })
-      .from(schema.users)
-      .where(eq(schema.users.role, "student"));
+    await connectToDatabase();
 
-    const [alumniCountResult] = await db
-      .select({ count: count() })
-      .from(schema.users)
-      .where(eq(schema.users.role, "alumni"));
-
-    const [reportCountResult] = await db
-      .select({ count: count() })
-      .from(schema.reports)
-      .where(eq(schema.reports.status, "pending"));
-
-    const [announcementCountResult] = await db
-      .select({ count: count() })
-      .from(schema.announcements);
+    // Query real counts directly from MongoDB Atlas (zero mock data)
+    const [totalStudents, totalAlumni, pendingReports, totalAnnouncements] =
+      await Promise.all([
+        User.countDocuments({ role: "student" }),
+        User.countDocuments({ role: "alumni" }),
+        Report.countDocuments({ status: "pending" }),
+        Announcement.countDocuments(),
+      ]);
 
     const stats: AdminStatsDTO = {
-      totalStudents: Number(studentCountResult?.count ?? 0),
-      totalAlumni: Number(alumniCountResult?.count ?? 0),
-      pendingReports: Number(reportCountResult?.count ?? 0),
-      totalAnnouncements: Number(announcementCountResult?.count ?? 0),
+      totalStudents,
+      totalAlumni,
+      pendingReports,
+      totalAnnouncements,
     };
 
     return NextResponse.json({ stats });

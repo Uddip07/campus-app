@@ -1,9 +1,10 @@
 import { redirect, notFound } from "next/navigation";
 import { getAuthenticatedAuthUser, getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
 import { canAccessRoom } from "@/lib/auth/rbac";
-import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { Room } from "@/db/models/Room";
 import { ChatContainer } from "@/components/chat/ChatContainer";
+import mongoose from "mongoose";
 
 interface RoomPageProps {
   params: {
@@ -24,17 +25,22 @@ export default async function DynamicRoomPage({ params }: RoomPageProps) {
 
   const { roomId } = params;
 
-  const room = await db.query.rooms.findFirst({
-    where: eq(schema.rooms.id, roomId),
-  });
+  if (!mongoose.Types.ObjectId.isValid(roomId)) {
+    notFound();
+  }
+
+  await connectToDatabase();
+
+  const room = await Room.findById(roomId);
 
   if (!room) {
     notFound();
   }
 
+  const cohortIdStr = room.cohortId ? room.cohortId.toString() : null;
   const hasAccess = canAccessRoom(
     { role: user.role, cohortId: user.cohortId, status: user.status },
-    { type: room.type, cohortId: room.cohortId }
+    { type: room.type, cohortId: cohortIdStr }
   );
 
   if (!hasAccess) {
@@ -52,7 +58,7 @@ export default async function DynamicRoomPage({ params }: RoomPageProps) {
 
   return (
     <ChatContainer
-      roomId={room.id}
+      roomId={room._id.toString()}
       roomName={room.name}
       currentUser={sanitizeUserProfile(user)}
     />

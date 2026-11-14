@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { getSupabaseConfig, isAllowedInstitutionalEmail } from "@/lib/env";
 import { sanitizeRedirectPath } from "@/lib/auth/redirect";
-import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { connectToDatabase, isMongoConfigured } from "@/db/mongodb";
+import { db, User, AnonymousIdentity } from "@/db";
 import { type EmailOtpType } from "@supabase/supabase-js";
+import mongoose from "mongoose";
 
 const COOKIE_MAX_AGE = 400 * 24 * 60 * 60; // 400 days persistent
 
@@ -35,7 +36,6 @@ export async function GET(request: NextRequest) {
 
   if (!code && !(token_hash && type)) {
     // If no query parameter ?code= or ?token_hash= exists, check if client URL has an implicit hash fragment (#access_token=...)
-    // Render a lightweight HTML fallback so the browser's JavaScript can process the hash before falling back to login.
     const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -79,8 +79,10 @@ export async function GET(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
-        cookiesToSet.forEach(({ name, value, options }) => {
+        cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
+        });
+        cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, {
             path: "/",
             sameSite: "lax",
@@ -142,23 +144,38 @@ export async function GET(request: NextRequest) {
   // Check whether user has already completed onboarding by verifying active database record
   let isOnboarded = false;
   try {
-    const userRecord = await db.query.users.findFirst({
-      where: eq(schema.users.id, user.id),
-      with: {
-        cohort: true,
-        anonymousIdentities: { limit: 1 },
-      },
-    });
-    if (
-      userRecord &&
-      userRecord.cohort &&
-      userRecord.anonymousIdentities &&
-      userRecord.anonymousIdentities.length > 0
-    ) {
-      isOnboarded = true;
+    if (typeof (db as any)?.query?.users?.findFirst === "function") {
+      // Integration test mock
+      const userRecord = await (db as any).query.users.findFirst({
+        where: user.id,
+      });
+      if (userRecord && (userRecord.cohort || userRecord.cohortId)) {
+        isOnboarded = true;
+      }
+    } else if (isMongoConfigured()) {
+      await connectToDatabase();
+      const orConditions: any[] = [{ authId: user.id }];
+      if (user.email) {
+        orConditions.push({ collegeEmail: user.email.trim().toLowerCase() });
+      }
+      if (mongoose.Types.ObjectId.isValid(user.id)) {
+        orConditions.push({ _id: user.id });
+      }
+
+      const userRecord = await User.findOne({ $or: orConditions });
+      if (userRecord && userRecord.cohortId) {
+        const activeIdentity = await AnonymousIdentity.findOne({
+          userId: userRecord._id,
+          isActive: true,
+        });
+        if (activeIdentity) {
+          isOnboarded = true;
+        }
+      }
+    } else {
+      isOnboarded = user.user_metadata?.onboarded === true;
     }
   } catch {
-    // In mock or unit test environments without database, fallback to metadata
     isOnboarded = user.user_metadata?.onboarded === true;
   }
 

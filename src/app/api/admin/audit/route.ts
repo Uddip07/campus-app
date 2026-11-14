@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { canViewAuditLogs } from "@/lib/auth/rbac";
-import { db, schema } from "@/db";
-import { desc } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { AuditLog, AnonymousIdentity } from "@/db/models";
 import { AuditLogDTO } from "@/lib/types";
 
 export async function GET() {
@@ -19,30 +19,45 @@ export async function GET() {
       );
     }
 
-    const rawLogs = await db.query.auditLogs.findMany({
-      orderBy: [desc(schema.auditLogs.createdAt)],
-      limit: 100,
-      with: {
-        actor: {
-          with: {
-            anonymousIdentities: {
-              limit: 1,
-            },
-          },
-        },
-      },
-    });
+    await connectToDatabase();
 
-    const dtoList: AuditLogDTO[] = rawLogs.map((log) => ({
-      id: log.id,
-      actorAnonymousName:
-        log.actor?.anonymousIdentities[0]?.displayName || "System/Unknown",
-      action: log.action,
-      targetType: log.targetType,
-      targetId: log.targetId,
-      metadata: (log.metadata as Record<string, unknown>) || {},
-      createdAt: log.createdAt.toISOString(),
-    }));
+    const rawLogs = await AuditLog.find()
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .populate<{ actorId: any }>("actorId")
+      .lean();
+
+    const actorObjectIds = rawLogs
+      .filter((l) => l.actorId?._id)
+      .map((l) => l.actorId._id);
+
+    const identities = await AnonymousIdentity.find({
+      userId: { $in: actorObjectIds },
+      isActive: true,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const identityMap = new Map<string, string>();
+    for (const ident of identities) {
+      const uId = ident.userId.toString();
+      if (!identityMap.has(uId)) {
+        identityMap.set(uId, ident.displayName);
+      }
+    }
+
+    const dtoList: AuditLogDTO[] = rawLogs.map((log) => {
+      const actorIdStr = log.actorId?._id ? log.actorId._id.toString() : "";
+      return {
+        id: log._id.toString(),
+        actorAnonymousName: identityMap.get(actorIdStr) || "System/Staff",
+        action: log.action,
+        targetType: log.targetType,
+        targetId: log.targetId || null,
+        metadata: (log.metadata as Record<string, unknown>) || {},
+        createdAt: new Date(log.createdAt).toISOString(),
+      };
+    });
 
     return NextResponse.json({ logs: dtoList });
   } catch (err: unknown) {

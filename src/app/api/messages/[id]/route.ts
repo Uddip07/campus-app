@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { canModerate } from "@/lib/auth/rbac";
-import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { Message } from "@/db/models/Message";
 import { logAuditEvent } from "@/lib/audit/logger";
+import mongoose from "mongoose";
 
 interface RouteParams {
   params: {
@@ -19,15 +20,19 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = params;
-    const message = await db.query.messages.findFirst({
-      where: eq(schema.messages.id, id),
-    });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Message not found" }, { status: 404 });
+    }
+
+    await connectToDatabase();
+
+    const message = await Message.findById(id);
 
     if (!message) {
       return NextResponse.json({ error: "Message not found" }, { status: 404 });
     }
 
-    const isAuthor = message.senderId === user.userId;
+    const isAuthor = message.senderId.toString() === user.userId;
     const hasModPower = canModerate(user.role);
 
     if (!isAuthor && !hasModPower) {
@@ -37,13 +42,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Soft delete
-    await db
-      .update(schema.messages)
-      .set({
-        deletedAt: new Date(),
-      })
-      .where(eq(schema.messages.id, id));
+    // Soft delete in MongoDB
+    message.deletedAt = new Date();
+    await message.save();
 
     if (!isAuthor && hasModPower) {
       await logAuditEvent({

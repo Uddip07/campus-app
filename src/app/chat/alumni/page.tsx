@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { getAuthenticatedAuthUser, getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
 import { canAccessRoom } from "@/lib/auth/rbac";
-import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { Room } from "@/db/models/Room";
 import { ChatContainer } from "@/components/chat/ChatContainer";
 import { Building2, ShieldAlert } from "lucide-react";
 
@@ -17,16 +17,15 @@ export default async function AlumniChatPage() {
     redirect("/verify?setup=required");
   }
 
-  const alumniRoom = await db.query.rooms.findFirst({
-    where: eq(schema.rooms.type, "alumni"),
-  });
+  await connectToDatabase();
 
+  let alumniRoom = await Room.findOne({ type: "alumni" });
   if (!alumniRoom) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-3.5rem)] text-muted-foreground text-sm">
-        Alumni room is not initialized.
-      </div>
-    );
+    alumniRoom = await Room.create({
+      type: "alumni",
+      name: "Alumni",
+      cohortId: null,
+    });
   }
 
   const hasAccess = canAccessRoom(
@@ -44,7 +43,7 @@ export default async function AlumniChatPage() {
           Alumni Access Restricted
         </h1>
         <p className="text-xs text-muted-foreground max-w-sm">
-          You are currently registered as an active student ({user.graduationYear} Batch). Alumni chat is reserved for graduated alumni.
+          You are currently registered as an active student ({user.graduationYear} Batch). Alumni chat is reserved for graduated alumni and moderators.
         </p>
       </div>
     );
@@ -52,7 +51,7 @@ export default async function AlumniChatPage() {
 
   return (
     <ChatContainer
-      roomId={alumniRoom.id}
+      roomId={alumniRoom._id.toString()}
       roomName="Alumni"
       currentUser={sanitizeUserProfile(user)}
     />

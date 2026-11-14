@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { canModerate } from "@/lib/auth/rbac";
-import { db, schema } from "@/db";
-import { eq, desc } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { Report, Message, AnonymousIdentity } from "@/db/models";
 import { ReportDTO } from "@/lib/types";
 
 export async function GET() {
@@ -19,49 +19,58 @@ export async function GET() {
       );
     }
 
-    // Query pending reports from PostgreSQL
-    const rawReports = await db.query.reports.findMany({
-      where: eq(schema.reports.status, "pending"),
-      orderBy: [desc(schema.reports.createdAt)],
-      with: {
-        message: {
-          with: {
-            sender: {
-              with: {
-                anonymousIdentities: {
-                  orderBy: (identities, { desc }) => [desc(identities.createdAt)],
-                  limit: 1,
-                },
-              },
-            },
-          },
-        },
-        reporter: {
-          with: {
-            anonymousIdentities: {
-              orderBy: (identities, { desc }) => [desc(identities.createdAt)],
-              limit: 1,
-            },
-          },
-        },
-      },
-    });
+    await connectToDatabase();
+
+    // Query pending reports from MongoDB
+    const rawReports = await Report.find({ status: "pending" })
+      .sort({ createdAt: -1 })
+      .populate<{ messageId: any }>("messageId")
+      .populate<{ reporterId: any }>("reporterId")
+      .lean();
+
+    // Collect sender IDs and reporter IDs
+    const userObjectIds: any[] = [];
+    for (const r of rawReports) {
+      if (r.messageId?.senderId) {
+        userObjectIds.push(r.messageId.senderId);
+      }
+      if (r.reporterId?._id) {
+        userObjectIds.push(r.reporterId._id);
+      }
+    }
+
+    const identities = await AnonymousIdentity.find({
+      userId: { $in: userObjectIds },
+      isActive: true,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const identityMap = new Map<string, string>();
+    for (const ident of identities) {
+      const uId = ident.userId.toString();
+      if (!identityMap.has(uId)) {
+        identityMap.set(uId, ident.displayName);
+      }
+    }
 
     const reportsList: ReportDTO[] = rawReports.map((r) => {
-      const msgSenderIdentity = r.message?.sender?.anonymousIdentities[0];
-      const reporterIdentity = r.reporter?.anonymousIdentities[0];
+      const msg = r.messageId;
+      const reporter = r.reporterId;
+      const msgSenderUId = msg?.senderId ? msg.senderId.toString() : "";
+      const reporterUId = reporter?._id ? reporter._id.toString() : "";
 
       return {
-        id: r.id,
-        messageId: r.messageId,
-        messageContent: r.message?.content || "[Message deleted]",
-        messageSenderAnonymousName: msgSenderIdentity?.displayName || "AnonymousUser",
-        reporterAnonymousName: reporterIdentity?.displayName || "AnonymousUser",
+        id: r._id.toString(),
+        messageId: msg?._id ? msg._id.toString() : r.messageId?.toString() || "",
+        messageContent: msg?.content || "[Message deleted]",
+        messageSenderAnonymousName: identityMap.get(msgSenderUId) || "AnonymousUser",
+        reporterAnonymousName: identityMap.get(reporterUId) || "AnonymousUser",
         reason: r.reason,
-        description: r.description,
+        description: r.description ?? null,
         status: r.status,
-        createdAt: r.createdAt.toISOString(),
-        resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+        createdAt: new Date(r.createdAt).toISOString(),
+        resolvedAt: r.resolvedAt ? new Date(r.resolvedAt).toISOString() : null,
       };
     });
 

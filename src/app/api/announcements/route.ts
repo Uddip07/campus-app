@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
-import { db, schema } from "@/db";
-import { eq, and, or, isNull, lte, gt, desc } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { Announcement, AnnouncementAttachment } from "@/db/models";
 import { AnnouncementDTO } from "@/lib/types";
+import mongoose from "mongoose";
 
 export async function GET() {
   try {
@@ -14,70 +15,82 @@ export async function GET() {
       );
     }
 
+    await connectToDatabase();
+
     const now = new Date();
 
     // Base filter: published and not expired
-    const timeConditions = and(
-      lte(schema.announcements.publishedAt, now),
-      or(isNull(schema.announcements.expiresAt), gt(schema.announcements.expiresAt, now))
-    );
+    const timeFilter: Record<string, any> = {
+      publishedAt: { $lte: now },
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+    };
 
-    // Audience filter based on user role and cohort
-    let audienceCondition;
+    let audienceFilter: Record<string, any>;
     if (["admin", "super_admin", "moderator"].includes(user.role)) {
-      audienceCondition = timeConditions;
+      audienceFilter = timeFilter;
     } else if (user.role === "alumni") {
-      audienceCondition = and(
-        timeConditions,
-        or(
-          eq(schema.announcements.audienceType, "all"),
-          eq(schema.announcements.audienceType, "alumni")
-        )
-      );
+      audienceFilter = {
+        ...timeFilter,
+        audienceType: { $in: ["all", "alumni"] },
+      };
     } else {
       // Regular student
-      audienceCondition = and(
-        timeConditions,
-        or(
-          eq(schema.announcements.audienceType, "all"),
-          and(
-            eq(schema.announcements.audienceType, "cohort"),
-            eq(schema.announcements.cohortId, user.cohortId)
-          )
-        )
-      );
+      const userCohortObjectId = mongoose.Types.ObjectId.isValid(user.cohortId)
+        ? new mongoose.Types.ObjectId(user.cohortId)
+        : null;
+
+      audienceFilter = {
+        ...timeFilter,
+        $or: [
+          { audienceType: "all" },
+          { audienceType: "cohort", cohortId: userCohortObjectId },
+        ],
+      };
     }
 
-    const announcements = await db.query.announcements.findMany({
-      where: audienceCondition,
-      orderBy: [
-        desc(schema.announcements.isPinned),
-        desc(schema.announcements.publishedAt),
-      ],
-      with: {
-        cohort: true,
-        attachments: true,
-      },
-    });
+    const announcements = await Announcement.find(audienceFilter)
+      .sort({ isPinned: -1, publishedAt: -1 })
+      .populate<{ cohortId: { _id: any; graduationYear: number } | null }>("cohortId")
+      .lean();
 
-    const dtoList: AnnouncementDTO[] = announcements.map((a) => ({
-      id: a.id,
-      title: a.title,
-      content: a.content,
-      audienceType: a.audienceType,
-      cohortYear: a.cohort?.graduationYear ?? null,
-      isPinned: a.isPinned,
-      publishedAt: a.publishedAt ? a.publishedAt.toISOString() : null,
-      expiresAt: a.expiresAt ? a.expiresAt.toISOString() : null,
-      createdAt: a.createdAt.toISOString(),
-      attachments: a.attachments.map((att) => ({
-        id: att.id,
-        fileName: att.fileName,
-        mimeType: att.mimeType,
-        fileSize: att.fileSize,
-        downloadUrl: att.storagePath,
-      })),
-    }));
+    const announcementIds = announcements.map((a) => a._id);
+    const attachments = await AnnouncementAttachment.find({
+      announcementId: { $in: announcementIds },
+    }).lean();
+
+    const attachmentMap = new Map<string, any[]>();
+    for (const att of attachments) {
+      const aId = att.announcementId.toString();
+      if (!attachmentMap.has(aId)) {
+        attachmentMap.set(aId, []);
+      }
+      attachmentMap.get(aId)!.push(att);
+    }
+
+    const dtoList: AnnouncementDTO[] = announcements.map((a) => {
+      const aId = a._id.toString();
+      const cohortData = a.cohortId as any;
+      const attList = attachmentMap.get(aId) || [];
+
+      return {
+        id: aId,
+        title: a.title,
+        content: a.content,
+        audienceType: a.audienceType,
+        cohortYear: cohortData?.graduationYear ?? null,
+        isPinned: a.isPinned,
+        publishedAt: a.publishedAt ? new Date(a.publishedAt).toISOString() : null,
+        expiresAt: a.expiresAt ? new Date(a.expiresAt).toISOString() : null,
+        createdAt: new Date(a.createdAt).toISOString(),
+        attachments: attList.map((att) => ({
+          id: att._id.toString(),
+          fileName: att.fileName,
+          mimeType: att.mimeType,
+          fileSize: att.fileSize,
+          downloadUrl: att.storagePath,
+        })),
+      };
+    });
 
     return NextResponse.json({ announcements: dtoList });
   } catch (err: unknown) {

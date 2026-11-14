@@ -3,8 +3,9 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth/session";
 import { canModerate } from "@/lib/auth/rbac";
 import { logAuditEvent } from "@/lib/audit/logger";
-import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { Report, Message, User, Ban } from "@/db/models";
+import mongoose from "mongoose";
 
 const reportActionSchema = z.object({
   action: z.enum([
@@ -40,6 +41,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id: reportId } = params;
+    if (!mongoose.Types.ObjectId.isValid(reportId)) {
+      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const parseResult = reportActionSchema.safeParse(body);
 
@@ -52,12 +57,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     const { action, durationHours, reason } = parseResult.data;
 
-    const report = await db.query.reports.findFirst({
-      where: eq(schema.reports.id, reportId),
-      with: {
-        message: true,
-      },
-    });
+    await connectToDatabase();
+
+    const report = await Report.findById(reportId).populate<{ messageId: any }>("messageId");
 
     if (!report) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
@@ -65,16 +67,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     const now = new Date();
     const actionReason = reason || `Moderator action via report ${reportId}: ${action}`;
+    const reviewerObjectId = new mongoose.Types.ObjectId(user.userId);
 
     if (action === "dismiss") {
-      await db
-        .update(schema.reports)
-        .set({
-          status: "dismissed",
-          reviewedBy: user.userId,
-          resolvedAt: now,
-        })
-        .where(eq(schema.reports.id, reportId));
+      report.status = "dismissed";
+      report.reviewedBy = reviewerObjectId;
+      report.resolvedAt = now;
+      await report.save();
 
       await logAuditEvent({
         actorId: user.userId,
@@ -89,28 +88,22 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     // Message removal action
     if (action === "remove_message" && report.messageId) {
-      await db
-        .update(schema.messages)
-        .set({
-          moderationStatus: "removed",
-          deletedAt: now,
-        })
-        .where(eq(schema.messages.id, report.messageId));
+      const msgId = report.messageId._id || report.messageId;
+      await Message.updateOne(
+        { _id: msgId },
+        { moderationStatus: "removed", deletedAt: now }
+      );
 
-      await db
-        .update(schema.reports)
-        .set({
-          status: "resolved",
-          reviewedBy: user.userId,
-          resolvedAt: now,
-        })
-        .where(eq(schema.reports.id, reportId));
+      report.status = "resolved";
+      report.reviewedBy = reviewerObjectId;
+      report.resolvedAt = now;
+      await report.save();
 
       await logAuditEvent({
         actorId: user.userId,
         action: "MESSAGE_REMOVED",
         targetType: "message",
-        targetId: report.messageId,
+        targetId: msgId.toString(),
         metadata: { reportId, reason: actionReason },
       });
 
@@ -118,7 +111,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     // Punitive actions on message sender
-    const offenderId = report.message?.senderId;
+    const offenderId = report.messageId?.senderId;
     if (!offenderId) {
       return NextResponse.json(
         { error: "Cannot apply action: message author record unavailable." },
@@ -126,30 +119,28 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const offenderObjectId = new mongoose.Types.ObjectId(offenderId);
+
     if (action === "mute") {
       const expiresAt = new Date(now.getTime() + durationHours * 3600 * 1000);
-      await db.insert(schema.bans).values({
-        userId: offenderId,
+      await Ban.create({
+        userId: offenderObjectId,
         type: "mute",
         reason: actionReason,
         expiresAt,
-        createdBy: user.userId,
+        createdBy: reviewerObjectId,
       });
 
-      await db
-        .update(schema.reports)
-        .set({
-          status: "resolved",
-          reviewedBy: user.userId,
-          resolvedAt: now,
-        })
-        .where(eq(schema.reports.id, reportId));
+      report.status = "resolved";
+      report.reviewedBy = reviewerObjectId;
+      report.resolvedAt = now;
+      await report.save();
 
       await logAuditEvent({
         actorId: user.userId,
         action: "USER_MUTED",
         targetType: "user",
-        targetId: offenderId,
+        targetId: offenderId.toString(),
         metadata: { expiresAt: expiresAt.toISOString(), reason: actionReason },
       });
 
@@ -158,33 +149,26 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     if (action === "temp_ban") {
       const expiresAt = new Date(now.getTime() + durationHours * 3600 * 1000);
-      await db.insert(schema.bans).values({
-        userId: offenderId,
+      await Ban.create({
+        userId: offenderObjectId,
         type: "temp_ban",
         reason: actionReason,
         expiresAt,
-        createdBy: user.userId,
+        createdBy: reviewerObjectId,
       });
 
-      await db
-        .update(schema.users)
-        .set({ status: "suspended", updatedAt: now })
-        .where(eq(schema.users.id, offenderId));
+      await User.updateOne({ _id: offenderObjectId }, { status: "suspended" });
 
-      await db
-        .update(schema.reports)
-        .set({
-          status: "resolved",
-          reviewedBy: user.userId,
-          resolvedAt: now,
-        })
-        .where(eq(schema.reports.id, reportId));
+      report.status = "resolved";
+      report.reviewedBy = reviewerObjectId;
+      report.resolvedAt = now;
+      await report.save();
 
       await logAuditEvent({
         actorId: user.userId,
         action: "USER_BANNED",
         targetType: "user",
-        targetId: offenderId,
+        targetId: offenderId.toString(),
         metadata: { type: "temp_ban", expiresAt: expiresAt.toISOString(), reason: actionReason },
       });
 
@@ -192,33 +176,26 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     if (action === "permanent_ban") {
-      await db.insert(schema.bans).values({
-        userId: offenderId,
+      await Ban.create({
+        userId: offenderObjectId,
         type: "permanent_ban",
         reason: actionReason,
         expiresAt: null,
-        createdBy: user.userId,
+        createdBy: reviewerObjectId,
       });
 
-      await db
-        .update(schema.users)
-        .set({ status: "banned", updatedAt: now })
-        .where(eq(schema.users.id, offenderId));
+      await User.updateOne({ _id: offenderObjectId }, { status: "banned" });
 
-      await db
-        .update(schema.reports)
-        .set({
-          status: "resolved",
-          reviewedBy: user.userId,
-          resolvedAt: now,
-        })
-        .where(eq(schema.reports.id, reportId));
+      report.status = "resolved";
+      report.reviewedBy = reviewerObjectId;
+      report.resolvedAt = now;
+      await report.save();
 
       await logAuditEvent({
         actorId: user.userId,
         action: "USER_BANNED",
         targetType: "user",
-        targetId: offenderId,
+        targetId: offenderId.toString(),
         metadata: { type: "permanent_ban", reason: actionReason },
       });
 
@@ -226,14 +203,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     if (action === "warn") {
-      await db
-        .update(schema.reports)
-        .set({
-          status: "resolved",
-          reviewedBy: user.userId,
-          resolvedAt: now,
-        })
-        .where(eq(schema.reports.id, reportId));
+      report.status = "resolved";
+      report.reviewedBy = reviewerObjectId;
+      report.resolvedAt = now;
+      await report.save();
 
       await logAuditEvent({
         actorId: user.userId,

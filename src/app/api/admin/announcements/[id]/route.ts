@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { canManageAnnouncements } from "@/lib/auth/rbac";
 import { logAuditEvent } from "@/lib/audit/logger";
-import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { Announcement } from "@/db/models/Announcement";
+import mongoose from "mongoose";
 
 interface RouteParams {
   params: {
@@ -26,15 +27,19 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = params;
-    const existing = await db.query.announcements.findFirst({
-      where: eq(schema.announcements.id, id),
-    });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Announcement not found" }, { status: 404 });
+    }
+
+    await connectToDatabase();
+
+    const existing = await Announcement.findById(id);
 
     if (!existing) {
       return NextResponse.json({ error: "Announcement not found" }, { status: 404 });
     }
 
-    await db.delete(schema.announcements).where(eq(schema.announcements.id, id));
+    await Announcement.deleteOne({ _id: id });
 
     await logAuditEvent({
       actorId: user.userId,

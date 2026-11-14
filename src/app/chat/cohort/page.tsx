@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getAuthenticatedAuthUser, getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
-import { db, schema } from "@/db";
-import { eq, and } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { Room } from "@/db/models/Room";
 import { ChatContainer } from "@/components/chat/ChatContainer";
+import mongoose from "mongoose";
 
 export default async function CohortChatPage() {
   const authUser = await getAuthenticatedAuthUser();
@@ -15,30 +16,27 @@ export default async function CohortChatPage() {
     redirect("/verify?setup=required");
   }
 
-  // Look up student's cohort room
-  let cohortRoom = await db.query.rooms.findFirst({
-    where: and(
-      eq(schema.rooms.type, "cohort"),
-      eq(schema.rooms.cohortId, user.cohortId)
-    ),
+  await connectToDatabase();
+
+  const cohortObjectId = new mongoose.Types.ObjectId(user.cohortId);
+
+  // Look up student's cohort room in MongoDB
+  let cohortRoom = await Room.findOne({
+    type: "cohort",
+    cohortId: cohortObjectId,
   });
 
   if (!cohortRoom) {
-    // Create cohort room if missing
-    const [created] = await db
-      .insert(schema.rooms)
-      .values({
-        type: "cohort",
-        name: `${user.graduationYear} Batch`,
-        cohortId: user.cohortId,
-      })
-      .returning();
-    cohortRoom = created;
+    cohortRoom = await Room.create({
+      type: "cohort",
+      name: `${user.graduationYear} Batch`,
+      cohortId: cohortObjectId,
+    });
   }
 
   return (
     <ChatContainer
-      roomId={cohortRoom.id}
+      roomId={cohortRoom._id.toString()}
       roomName={`${user.graduationYear} Batch`}
       currentUser={sanitizeUserProfile(user)}
     />

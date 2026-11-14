@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth/session";
-import { db, schema } from "@/db";
-import { and, eq } from "drizzle-orm";
-
-const ALLOWED_REACTIONS = ["like", "love", "laugh", "wow", "sad", "angry"] as const;
+import { connectToDatabase } from "@/db/mongodb";
+import { Message, MessageReaction, ALLOWED_REACTIONS } from "@/db/models";
+import mongoose from "mongoose";
 
 const reactionSchema = z.object({
   reaction: z.enum(ALLOWED_REACTIONS),
@@ -28,6 +27,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id: messageId } = params;
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+      return NextResponse.json({ error: "Message not found" }, { status: 404 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const parseResult = reactionSchema.safeParse(body);
 
@@ -40,39 +43,36 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const { reaction } = parseResult.data;
 
-    // Check message exists and is not deleted
-    const message = await db.query.messages.findFirst({
-      where: and(eq(schema.messages.id, messageId), eq(schema.messages.moderationStatus, "approved")),
+    await connectToDatabase();
+
+    // Check message exists and is approved and active
+    const message = await Message.findOne({
+      _id: messageId,
+      moderationStatus: "approved",
+      deletedAt: null,
     });
 
     if (!message) {
       return NextResponse.json({ error: "Message not found" }, { status: 404 });
     }
 
-    // Toggle reaction: if exists delete, else insert
-    const existing = await db.query.messageReactions.findFirst({
-      where: and(
-        eq(schema.messageReactions.messageId, messageId),
-        eq(schema.messageReactions.userId, user.userId),
-        eq(schema.messageReactions.reaction, reaction)
-      ),
+    const messageObjectId = new mongoose.Types.ObjectId(messageId);
+    const userObjectId = new mongoose.Types.ObjectId(user.userId);
+
+    // Toggle reaction in MongoDB
+    const existing = await MessageReaction.findOne({
+      messageId: messageObjectId,
+      userId: userObjectId,
+      reaction,
     });
 
     if (existing) {
-      await db
-        .delete(schema.messageReactions)
-        .where(
-          and(
-            eq(schema.messageReactions.messageId, messageId),
-            eq(schema.messageReactions.userId, user.userId),
-            eq(schema.messageReactions.reaction, reaction)
-          )
-        );
+      await MessageReaction.deleteOne({ _id: existing._id });
       return NextResponse.json({ reacted: false, reaction });
     } else {
-      await db.insert(schema.messageReactions).values({
-        messageId,
-        userId: user.userId,
+      await MessageReaction.create({
+        messageId: messageObjectId,
+        userId: userObjectId,
         reaction,
       });
       return NextResponse.json({ reacted: true, reaction });
@@ -91,6 +91,10 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id: messageId } = params;
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+      return NextResponse.json({ error: "Invalid message ID" }, { status: 400 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const parseResult = reactionSchema.safeParse(body);
 
@@ -100,15 +104,13 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
     const { reaction } = parseResult.data;
 
-    await db
-      .delete(schema.messageReactions)
-      .where(
-        and(
-          eq(schema.messageReactions.messageId, messageId),
-          eq(schema.messageReactions.userId, user.userId),
-          eq(schema.messageReactions.reaction, reaction)
-        )
-      );
+    await connectToDatabase();
+
+    await MessageReaction.deleteOne({
+      messageId: new mongoose.Types.ObjectId(messageId),
+      userId: new mongoose.Types.ObjectId(user.userId),
+      reaction,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { canAccessRoom } from "@/lib/auth/rbac";
-import { db, schema } from "@/db";
+import { connectToDatabase } from "@/db/mongodb";
+import { Room } from "@/db/models/Room";
 import { RoomDTO } from "@/lib/types";
 
 export async function GET() {
@@ -14,27 +15,31 @@ export async function GET() {
       );
     }
 
-    // Query rooms with their cohort details
-    const allRooms = await db.query.rooms.findMany({
-      with: {
-        cohort: true,
-      },
-    });
+    await connectToDatabase();
+
+    // Query rooms with their cohort details from MongoDB
+    const allRooms = await Room.find().populate<{
+      cohortId: { _id: any; graduationYear: number } | null;
+    }>("cohortId");
 
     const authorizedRooms: RoomDTO[] = allRooms
-      .filter((room) =>
-        canAccessRoom(
+      .filter((room) => {
+        const cohortIdStr = room.cohortId ? (room.cohortId as any)._id.toString() : null;
+        return canAccessRoom(
           { role: user.role, cohortId: user.cohortId, status: user.status },
-          { type: room.type, cohortId: room.cohortId }
-        )
-      )
-      .map((room) => ({
-        id: room.id,
-        type: room.type,
-        name: room.name,
-        cohortId: room.cohortId,
-        graduationYear: room.cohort?.graduationYear ?? null,
-      }));
+          { type: room.type, cohortId: cohortIdStr }
+        );
+      })
+      .map((room) => {
+        const cohortData = room.cohortId as any;
+        return {
+          id: room._id.toString(),
+          type: room.type,
+          name: room.name,
+          cohortId: cohortData?._id ? cohortData._id.toString() : null,
+          graduationYear: cohortData?.graduationYear ?? null,
+        };
+      });
 
     return NextResponse.json({ rooms: authorizedRooms });
   } catch (err: unknown) {

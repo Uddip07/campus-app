@@ -1,4 +1,6 @@
-import { db, schema } from "@/db";
+import { connectToDatabase } from "@/db/mongodb";
+import { AuditLog } from "@/db/models/AuditLog";
+import mongoose from "mongoose";
 
 export interface LogAuditInput {
   actorId: string;
@@ -20,21 +22,26 @@ export interface LogAuditInput {
 }
 
 /**
- * Persists an immutable audit log record to PostgreSQL.
- * Never fabricates audit events.
+ * Persists an immutable audit log record to MongoDB Atlas.
+ * Guarantees zero fabrication of audit events.
  */
 export async function logAuditEvent(input: LogAuditInput): Promise<void> {
   try {
-    await db.insert(schema.auditLogs).values({
-      actorId: input.actorId,
+    await connectToDatabase();
+
+    const actorObjectId = mongoose.Types.ObjectId.isValid(input.actorId)
+      ? new mongoose.Types.ObjectId(input.actorId)
+      : input.actorId;
+
+    await AuditLog.create({
+      actorId: actorObjectId,
       action: input.action,
       targetType: input.targetType,
       targetId: input.targetId || null,
       metadata: input.metadata || {},
     });
   } catch (err) {
-    console.error("[AuditLog] Failed to persist audit record:", err);
-    // Audit log failure in privileged operations must be handled conscientiously
+    console.error("[AuditLog] Failed to persist audit record to MongoDB:", err);
     throw new Error("Failed to create audit log record.");
   }
 }

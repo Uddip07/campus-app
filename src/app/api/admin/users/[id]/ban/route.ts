@@ -3,8 +3,9 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth/session";
 import { canModerate } from "@/lib/auth/rbac";
 import { logAuditEvent } from "@/lib/audit/logger";
-import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { User, Ban } from "@/db/models";
+import mongoose from "mongoose";
 
 const banSchema = z.object({
   type: z.enum(["temp_ban", "permanent_ban"]),
@@ -33,6 +34,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id: targetUserId } = params;
+    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+      return NextResponse.json({ error: "Invalid target user ID" }, { status: 400 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const parseResult = banSchema.safeParse(body);
 
@@ -50,21 +55,26 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         ? new Date(now.getTime() + durationDays * 24 * 3600 * 1000)
         : null;
 
-    await db.insert(schema.bans).values({
-      userId: targetUserId,
+    await connectToDatabase();
+
+    const targetUserObjectId = new mongoose.Types.ObjectId(targetUserId);
+    const creatorUserObjectId = new mongoose.Types.ObjectId(user.userId);
+
+    await Ban.create({
+      userId: targetUserObjectId,
       type,
       reason,
       expiresAt,
-      createdBy: user.userId,
+      createdBy: creatorUserObjectId,
     });
 
-    await db
-      .update(schema.users)
-      .set({
+    await User.updateOne(
+      { _id: targetUserObjectId },
+      {
         status: type === "permanent_ban" ? "banned" : "suspended",
         updatedAt: now,
-      })
-      .where(eq(schema.users.id, targetUserId));
+      }
+    );
 
     await logAuditEvent({
       actorId: user.userId,

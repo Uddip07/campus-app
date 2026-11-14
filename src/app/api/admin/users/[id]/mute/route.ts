@@ -3,7 +3,9 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth/session";
 import { canModerate } from "@/lib/auth/rbac";
 import { logAuditEvent } from "@/lib/audit/logger";
-import { db, schema } from "@/db";
+import { connectToDatabase } from "@/db/mongodb";
+import { Ban } from "@/db/models/Ban";
+import mongoose from "mongoose";
 
 const muteSchema = z.object({
   reason: z.string().trim().min(3),
@@ -31,6 +33,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id: targetUserId } = params;
+    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+      return NextResponse.json({ error: "Invalid target user ID" }, { status: 400 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const parseResult = muteSchema.safeParse(body);
 
@@ -45,12 +51,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + durationHours * 3600 * 1000);
 
-    await db.insert(schema.bans).values({
-      userId: targetUserId,
+    await connectToDatabase();
+
+    await Ban.create({
+      userId: new mongoose.Types.ObjectId(targetUserId),
       type: "mute",
       reason,
       expiresAt,
-      createdBy: user.userId,
+      createdBy: new mongoose.Types.ObjectId(user.userId),
     });
 
     await logAuditEvent({

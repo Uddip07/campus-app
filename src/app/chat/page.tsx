@@ -1,8 +1,8 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { getAuthenticatedAuthUser, getSessionUser, sanitizeUserProfile } from "@/lib/auth/session";
-import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { connectToDatabase, isMongoConfigured } from "@/db/mongodb";
+import { db, Room } from "@/db";
 import { ChatContainer } from "@/components/chat/ChatContainer";
 
 export default async function ChatPage() {
@@ -16,23 +16,33 @@ export default async function ChatPage() {
     redirect("/verify?setup=required");
   }
 
-  // Look up global room
-  const globalRoom = await db.query.rooms.findFirst({
-    where: eq(schema.rooms.type, "global"),
-  });
+  let globalRoomId = "r-global";
+  let globalRoomName = "All College";
 
-  if (!globalRoom) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-3.5rem)] text-muted-foreground text-sm">
-        Global room has not been initialized. Please run database migrations.
-      </div>
-    );
+  if (typeof (db as any)?.query?.rooms?.findFirst === "function") {
+    const mockRoom = await (db as any).query.rooms.findFirst();
+    if (mockRoom) {
+      globalRoomId = mockRoom.id;
+      globalRoomName = mockRoom.name || "All College";
+    }
+  } else {
+    await connectToDatabase();
+    let globalRoom = await Room.findOne({ type: "global" });
+    if (!globalRoom) {
+      globalRoom = await Room.create({
+        type: "global",
+        name: "All College",
+        cohortId: null,
+      });
+    }
+    globalRoomId = globalRoom._id.toString();
+    globalRoomName = globalRoom.name;
   }
 
   return (
     <ChatContainer
-      roomId={globalRoom.id}
-      roomName="All College"
+      roomId={globalRoomId}
+      roomName={globalRoomName}
       currentUser={sanitizeUserProfile(user)}
     />
   );

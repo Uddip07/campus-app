@@ -3,12 +3,13 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth/session";
 import { canResolveIdentity } from "@/lib/auth/rbac";
 import { logAuditEvent } from "@/lib/audit/logger";
-import { db, schema } from "@/db";
-import { eq, or } from "drizzle-orm";
+import { connectToDatabase } from "@/db/mongodb";
+import { AnonymousIdentity, User, Cohort } from "@/db/models";
+import mongoose from "mongoose";
 
 const resolveSchema = z
   .object({
-    anonymousIdentityId: z.string().uuid().optional(),
+    anonymousIdentityId: z.string().optional(),
     displayName: z.string().trim().min(3).optional(),
     reason: z
       .string()
@@ -53,37 +54,37 @@ export async function POST(req: NextRequest) {
 
     const { anonymousIdentityId, displayName, reason } = parseResult.data;
 
-    // Search identity record
-    const condition = anonymousIdentityId
-      ? eq(schema.anonymousIdentities.id, anonymousIdentityId)
-      : eq(schema.anonymousIdentities.displayName, displayName!);
+    await connectToDatabase();
 
-    const identity = await db.query.anonymousIdentities.findFirst({
-      where: condition,
-      with: {
-        user: {
-          with: {
-            cohort: true,
-          },
-        },
-      },
+    // Query identity record in MongoDB
+    const query =
+      anonymousIdentityId && mongoose.Types.ObjectId.isValid(anonymousIdentityId)
+        ? { _id: anonymousIdentityId }
+        : { displayName: displayName! };
+
+    const identity = await AnonymousIdentity.findOne(query).populate<{
+      userId: any;
+    }>({
+      path: "userId",
+      populate: { path: "cohortId" },
     });
 
-    if (!identity || !identity.user) {
+    if (!identity || !identity.userId) {
       return NextResponse.json(
         { error: "Anonymous identity not found." },
         { status: 404 }
       );
     }
 
-    const resolvedUser = identity.user;
+    const resolvedUser = identity.userId as any;
+    const cohortData = resolvedUser.cohortId as any;
 
-    // Mandatory immutable audit log
+    // Mandatory immutable audit log in MongoDB
     await logAuditEvent({
       actorId: user.userId,
       action: "IDENTITY_RESOLUTION",
       targetType: "anonymous_identity",
-      targetId: identity.id,
+      targetId: identity._id.toString(),
       metadata: {
         reason,
         targetDisplayName: identity.displayName,
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
         rollNumber: resolvedUser.rollNumber,
         enrollmentYear: resolvedUser.enrollmentYear,
         programCode: resolvedUser.programCode,
-        graduationYear: resolvedUser.cohort?.graduationYear ?? null,
+        graduationYear: cohortData?.graduationYear ?? null,
         role: resolvedUser.role,
         status: resolvedUser.status,
       },
