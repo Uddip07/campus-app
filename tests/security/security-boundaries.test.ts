@@ -69,4 +69,62 @@ describe("Security Boundaries & Anonymity Enforcement", () => {
     const bannedStudent = { ...studentUser, status: "banned" as const };
     expect(canWriteInRoom(bannedStudent, myCohortRoom)).toBe(false);
   });
+
+  it("strictly enforces alumni room boundaries: only alumni and staff may access alumni room", () => {
+    const alumniRoom = { type: "alumni" as const, cohortId: null };
+
+    // Undergraduate student cannot access alumni room
+    expect(canAccessRoom(studentUser, alumniRoom)).toBe(false);
+
+    // Graduated alumni can access alumni room
+    const alumniUser: FullUserContext = {
+      ...studentUser,
+      userId: "33333333-3333-3333-3333-333333333333",
+      role: "alumni",
+      graduationYear: 2024,
+    };
+    expect(canAccessRoom(alumniUser, alumniRoom)).toBe(true);
+
+    // Staff can access alumni room for moderation
+    expect(canAccessRoom(moderatorUser, alumniRoom)).toBe(true);
+  });
+
+  it("strictly prevents alumni from accessing current undergraduate cohort rooms", () => {
+    const activeStudentCohortRoom = { type: "cohort" as const, cohortId: "cohort-uuid-2029" };
+    const alumniUser: FullUserContext = {
+      ...studentUser,
+      userId: "33333333-3333-3333-3333-333333333333",
+      role: "alumni",
+      cohortId: "cohort-uuid-2024",
+      graduationYear: 2024,
+    };
+
+    expect(canAccessRoom(alumniUser, activeStudentCohortRoom)).toBe(false);
+  });
+
+  it("verifies public message DTO privacy invariant: no PII leakage", () => {
+    const rawPublicMessage = {
+      id: "6735234567890abcdef12345",
+      roomId: "6735234567890abcdef12346",
+      content: "Has anyone solved DBMS Assignment 3?",
+      replyToId: null,
+      replyCount: 0,
+      reactions: [{ reaction: "like", count: 2, hasReacted: false }],
+      sender: {
+        displayName: "AnonymousCosmicFox42",
+        avatarSeed: "seed123",
+      },
+      createdAt: new Date().toISOString(),
+      isSender: false,
+      moderationStatus: "approved",
+    };
+
+    // Public message payload must NEVER contain student PII
+    expect((rawPublicMessage as any).sender.collegeId).toBeUndefined();
+    expect((rawPublicMessage as any).sender.collegeEmail).toBeUndefined();
+    expect((rawPublicMessage as any).sender.rollNumber).toBeUndefined();
+    expect((rawPublicMessage as any).sender.userId).toBeUndefined();
+    expect((rawPublicMessage as any).sender.authId).toBeUndefined();
+    expect(rawPublicMessage.sender.displayName).toMatch(/^Anonymous[A-Z][a-z]+[A-Z][a-z]+\d+$/);
+  });
 });
